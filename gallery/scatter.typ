@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.1.0": plot, scatter
+#import "@preview/simple-plot:0.2.0": plot, scatter
 
 #set page(width: auto, height: auto, margin: 0.5cm)
 

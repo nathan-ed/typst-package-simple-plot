@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.1.0": plot, line-plot
+#import "@preview/simple-plot:0.2.0": plot, line-plot
 
 #set page(width: auto, height: auto, margin: 0.5cm)
 
@@ -16,9 +16,8 @@
     stroke: blue + 1pt,
     mark: "*",
     mark-fill: blue,
-    label: [Data],
   ),
   // Theoretical model fit
   (fn: x => 0.15 * calc.pow(x, 2) + 0.3 * x,
-   stroke: red + 1.2pt, label: [Model], label-pos: 0.9),
+   stroke: red + 1.2pt, label: [Model], label-pos: 0.85, label-side: "below-left"),
 )

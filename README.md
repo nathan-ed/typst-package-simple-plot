@@ -22,15 +22,17 @@ Click on an image to see the source code.
 - **Simple API** - Plot functions with just a few lines of code
 - **Multiple plot types** - Functions, scatter plots, line plots with markers
 - **Customizable axes** - Position, labels, ticks, and tick labels
+- **Axis extension** - Extend axes beyond plot area for cleaner appearance
 - **Grid support** - Major and minor grids with custom styling
 - **14 marker types** - Circles, squares, triangles, diamonds, stars, and more
+- **Origin label control** - Toggle origin '0' label display
 - **Global defaults** - Set defaults for all plots in your document
 - **Full styling** - Customize colors, strokes, backgrounds, and more
 
 ## Quick Start
 
 ```typst
-#import "@preview/simple-plot:0.1.0": plot
+#import "@preview/simple-plot:0.2.0": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -47,7 +49,7 @@ Click on an image to see the source code.
 ### Plotting Functions
 
 ```typst
-#import "@preview/simple-plot:0.1.0": plot
+#import "@preview/simple-plot:0.2.0": plot
 
 // Single function
 #plot(
@@ -70,7 +72,7 @@ Click on an image to see the source code.
 ### Scatter Plots
 
 ```typst
-#import "@preview/simple-plot:0.1.0": plot, scatter
+#import "@preview/simple-plot:0.2.0": plot, scatter
 
 #plot(
   xmin: 0, xmax: 10,
@@ -87,7 +89,7 @@ Click on an image to see the source code.
 ### Line Plots with Markers
 
 ```typst
-#import "@preview/simple-plot:0.1.0": plot, line-plot
+#import "@preview/simple-plot:0.2.0": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -102,6 +104,40 @@ Click on an image to see the source code.
   ),
 )
 ```
+
+### Function Labels with Positioning
+
+Control the placement of function labels to avoid overlapping with your graphs using `label-pos` and `label-side`:
+
+```typst
+#import "@preview/simple-plot:0.2.0": plot
+
+#plot(
+  xmin: -5, xmax: 5,
+  ymin: -3, ymax: 5,
+  show-grid: true,
+  // Label positioned at 90% along the curve, to the right
+  (fn: x => 0.2 * calc.pow(x, 2) - 2,
+   stroke: blue + 1.5pt,
+   label: $f(x)$,
+   label-pos: 0.9,           // Position along curve (0-1)
+   label-side: "below-right" // Placement relative to point
+  ),
+  // Label positioned at 20% along the curve, above and to the right
+  (fn: x => -0.5 * x + 1,
+   stroke: red + 1.5pt,
+   label: $g(x)$,
+   label-pos: 0.2,
+   label-side: "above-right"
+  ),
+)
+```
+
+**Available label-side options:**
+- `"above"`, `"below"`, `"left"`, `"right"` - Basic 4 directions
+- `"above-left"`, `"above-right"`, `"below-left"`, `"below-right"` - Diagonal positions
+
+The `label-pos` parameter (0-1) determines where along the function curve the label appears, while `label-side` controls the anchor point to prevent overlapping with the graph line.
 
 ## Parameters Reference
 
@@ -220,7 +256,7 @@ Each function is a dictionary with:
 Set defaults that apply to all subsequent plots:
 
 ```typst
-#import "@preview/simple-plot:0.1.0": plot, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.2.0": plot, set-plot-defaults, reset-plot-defaults
 
 // Set defaults
 #set-plot-defaults(
@@ -292,7 +328,7 @@ Set defaults that apply to all subsequent plots:
 ### Experimental Data with Fit
 
 ```typst
-#import "@preview/simple-plot:0.1.0": plot, line-plot
+#import "@preview/simple-plot:0.2.0": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -342,6 +378,25 @@ Make axes extend beyond the plot area for a cleaner look:
 )
 ```
 
+## Comparison with Other Plotting Libraries
+
+### When to use simple-plot
+
+**simple-plot** is designed for mathematical function plotting with a focus on simplicity and ease of use. Choose simple-plot when you need to:
+
+- **Plot mathematical functions** quickly with minimal boilerplate code
+- **Create publication-quality plots** for math, physics, or engineering documents
+- **Use a familiar API** similar to pgfplots/matplotlib for straightforward plotting tasks
+- **Get started fast** with sensible defaults and intuitive parameter names
+
+### Alternatives
+
+- **[cetz-plot](https://typst.app/universe/package/cetz-plot/)**: A comprehensive charting library for data visualization including pie charts, bar charts, pyramid charts, and process diagrams. Better suited for business charts and general data visualization than mathematical function plotting.
+
+- **[lilaq](https://typst.app/universe/package/lilaq/)**: A powerful, feature-rich plotting library with advanced capabilities like colormesh, contour plots, multi-axis support, and quiver plots. Ideal for complex scientific visualizations, but has a steeper learning curve and requires more setup code.
+
+**In summary**: Use simple-plot for straightforward mathematical function plotting, cetz-plot for business charts and data visualization, and lilaq for advanced scientific plotting with complex multi-axis layouts.
+
 ## Dependencies
 
 - [CeTZ](https://github.com/cetz-package/cetz) (v0.4.2+)
@@ -349,3 +404,36 @@ Make axes extend beyond the plot area for a cleaner look:
 ## License
 
 MIT License - see LICENSE file for details.
+
+## Changelog
+
+All notable changes to simple-plot are documented here.
+
+### [0.2.0] - 2026-01-15
+
+#### Added
+- `axis-x-extend` parameter to extend X-axis beyond plot area (symmetric or asymmetric)
+- `axis-y-extend` parameter to extend Y-axis beyond plot area (symmetric or asymmetric)
+- `show-origin` parameter to control display of "0" label at origin
+- `label-side` parameter for function labels with 8 positioning options: "above", "below", "left", "right", "above-left", "above-right", "below-left", "below-right"
+- Line segment clipping using Liang-Barsky algorithm for cleaner plot rendering
+- New gallery example: `extended-axes.typ` demonstrating axis extension
+
+#### Fixed
+- Tick numbering algorithm now generates more intuitive automatic tick intervals
+- Function label positioning now correctly uses visible area instead of extended sampling domain
+
+### [0.1.0] - 2026-01-13
+
+#### Added
+- Initial release with core plotting functionality
+- Function plotting with customizable domains and sampling
+- Scatter plots and line plots with markers
+- 14 marker types (circles, squares, triangles, diamonds, stars, plus, cross, bars)
+- Customizable axes with flexible positioning
+- Grid support (major, minor, both)
+- Tick configuration with auto-generation and custom labels
+- Function labels with flexible positioning
+- Global defaults system with set/reset functions
+- Full styling customization for all plot elements
+- Built on CeTZ v0.4.2
