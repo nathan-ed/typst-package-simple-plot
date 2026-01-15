@@ -618,9 +618,10 @@
           let label-pos = func-spec.at("label-pos", default: 0.8)
           let label-side = func-spec.at("label-side", default: none)
           let label-anchor = if label-side != none { side-to-anchor(label-side) } else { func-spec.at("label-anchor", default: "south-west") }
-          let lx = domain-min + (domain-max - domain-min) * label-pos
+          // Use visible area for label positioning, not extended sampling domain
+          let lx = x-clip-min + (x-clip-max - x-clip-min) * label-pos
           let ly = fn(lx)
-          if ly != none and not (ly).is-nan() and ly >= y-plot-min and ly <= y-plot-max {
+          if ly != none and not (ly).is-nan() and ly >= y-clip-min and ly <= y-clip-max {
             let (cx, cy) = to-canvas(lx, ly)
             content((cx, cy), label, anchor: label-anchor)
           }
@@ -631,7 +632,7 @@
         let canvas-points = ()
         for (i, pt) in data-points.enumerate() {
           let (x, y) = pt
-          if x >= x-plot-min and x <= x-plot-max and y >= y-plot-min and y <= y-plot-max {
+          if x >= x-clip-min and x <= x-clip-max and y >= y-clip-min and y <= y-clip-max {
             let (cx, cy) = to-canvas(x, y)
             canvas-points.push((cx, cy))
             points-to-draw.push((cx, cy, i))
