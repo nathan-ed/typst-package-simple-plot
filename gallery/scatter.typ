@@ -1,13 +1,15 @@
-#import "@preview/simple-plot:0.2.0": plot, scatter
+#import "@preview/simple-plot:0.2.6": plot, scatter
 
 #set page(width: auto, height: auto, margin: 0.5cm)
 
+// Showcases: scatter plots with axes at bottom/left
 #plot(
   xmin: 0, xmax: 10,
   ymin: 0, ymax: 10,
   xlabel: $x$,
   ylabel: $y$,
-  show-grid: true,
+  show-grid: "both",
+  minor-grid-step: 5,
   axis-x-pos: "bottom",
   axis-y-pos: "left",
   scatter(

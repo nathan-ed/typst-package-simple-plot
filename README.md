@@ -32,7 +32,7 @@ Click on an image to see the source code.
 ## Quick Start
 
 ```typst
-#import "@preview/simple-plot:0.2.0": plot
+#import "@preview/simple-plot:0.2.6": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -49,7 +49,7 @@ Click on an image to see the source code.
 ### Plotting Functions
 
 ```typst
-#import "@preview/simple-plot:0.2.0": plot
+#import "@preview/simple-plot:0.2.6": plot
 
 // Single function
 #plot(
@@ -72,7 +72,7 @@ Click on an image to see the source code.
 ### Scatter Plots
 
 ```typst
-#import "@preview/simple-plot:0.2.0": plot, scatter
+#import "@preview/simple-plot:0.2.6": plot, scatter
 
 #plot(
   xmin: 0, xmax: 10,
@@ -89,7 +89,7 @@ Click on an image to see the source code.
 ### Line Plots with Markers
 
 ```typst
-#import "@preview/simple-plot:0.2.0": plot, line-plot
+#import "@preview/simple-plot:0.2.6": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -110,7 +110,7 @@ Click on an image to see the source code.
 Control the placement of function labels to avoid overlapping with your graphs using `label-pos` and `label-side`:
 
 ```typst
-#import "@preview/simple-plot:0.2.0": plot
+#import "@preview/simple-plot:0.2.6": plot
 
 #plot(
   xmin: -5, xmax: 5,
@@ -139,6 +139,24 @@ Control the placement of function labels to avoid overlapping with your graphs u
 
 The `label-pos` parameter (0-1) determines where along the function curve the label appears, while `label-side` controls the anchor point to prevent overlapping with the graph line.
 
+## Mathematical Functions
+
+Functions use Typst's `calc` module:
+
+| Function | Typst syntax |
+|----------|--------------|
+| Power $x^n$ | `calc.pow(x, n)` |
+| Square root | `calc.sqrt(x)` |
+| Absolute value | `calc.abs(x)` |
+| Sine, Cosine, Tangent | `calc.sin(x)`, `calc.cos(x)`, `calc.tan(x)` |
+| Exponential $e^x$ | `calc.exp(x)` |
+| Natural log | `calc.ln(x)` |
+| Log base b | `calc.log(x, base: b)` |
+
+> **Important:** Use decimal notation for constants (e.g., `2.0` instead of `2`) to avoid type errors:
+> - ✓ `x => x * x / 2.0`
+> - ✗ `x => x * x / 2`
+
 ## Parameters Reference
 
 ### Plot Parameters
@@ -151,14 +169,16 @@ The `label-pos` parameter (0-1) determines where along the function curve the la
 | `scale` | float | 1 | Scale factor for the entire plot |
 | `xlabel`, `ylabel` | content | none | Axis labels |
 | `show-grid` | bool/str | false | Grid display: `true`, `false`, `"major"`, `"minor"`, `"both"` |
-| `minor-grid-step` | int | 2 | Minor grid subdivisions per major tick |
+| `minor-grid-step` | int | 5 | Minor grid subdivisions per major tick |
+| `grid-label-break` | bool | true | Draw white boxes behind labels to break grid lines |
 | `axis-x-pos` | float/str | 0 | X-axis position: value, `"bottom"`, `"center"` |
 | `axis-y-pos` | float/str | 0 | Y-axis position: value, `"left"`, `"center"` |
-| `axis-x-extend` | float/array | 0 | Extend X-axis beyond plot: value or `(left, right)` |
-| `axis-y-extend` | float/array | 0 | Extend Y-axis beyond plot: value or `(bottom, top)` |
+| `axis-x-extend` | float/array | (0, 0.5) | Extend X-axis beyond grid: value or `(left, right)` |
+| `axis-y-extend` | float/array | (0, 0.5) | Extend Y-axis beyond grid: value or `(bottom, top)` |
 | `show-origin` | bool | true | Show "0" label at origin |
-| `tick-label-size` | length | 0.65em | Font size for tick labels |
-| `axis-label-size` | length | 0.8em | Font size for axis labels (x, y) |
+| `unit-label-only` | bool | false | Show only "1" on axes for minimal style |
+| `tick-label-size` | length | 10pt | Font size for tick labels |
+| `axis-label-size` | length | 10pt | Font size for axis labels (x, y) |
 
 ### Axis Label Placement
 
@@ -176,7 +196,8 @@ The `label-pos` parameter (0-1) determines where along the function curve the la
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `xtick`, `ytick` | auto/none/array | auto | Tick positions |
-| `xtick-step`, `ytick-step` | auto/float | auto | Step between ticks |
+| `xtick-step`, `ytick-step` | auto/float | 1 | Step between ticks (integers by default) |
+| `xtick-label-step`, `ytick-label-step` | int | 1 | Show label every N ticks |
 | `xtick-labels`, `ytick-labels` | auto/array | auto | Custom tick labels |
 
 ### Function Specification
@@ -256,7 +277,7 @@ Each function is a dictionary with:
 Set defaults that apply to all subsequent plots:
 
 ```typst
-#import "@preview/simple-plot:0.2.0": plot, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.2.6": plot, set-plot-defaults, reset-plot-defaults
 
 // Set defaults
 #set-plot-defaults(
@@ -313,6 +334,34 @@ Set defaults that apply to all subsequent plots:
 )
 ```
 
+For powers with an arbitrary base (e.g. $2^x$, $3^x$), use `calc.pow(base, x)`:
+
+```typst
+#plot(
+  xmin: -2, xmax: 5,
+  ymin: 0, ymax: 32,
+  show-grid: true,
+  (fn: x => calc.pow(2, x), stroke: blue + 1.5pt, label: $2^x$),
+  (fn: x => calc.pow(3, x), stroke: red + 1.5pt, label: $3^x$),
+)
+```
+
+For logarithms with an arbitrary base, use `calc.log(x, base: b)` (or `calc.ln(x)` for the natural log):
+
+```typst
+#plot(
+  xmin: 0, xmax: 10,
+  ymin: -2, ymax: 4,
+  show-grid: true,
+  (fn: x => calc.ln(x),
+   domain: (0.01, 10), stroke: green + 1.5pt, label: $ln(x)$),
+  (fn: x => calc.log(x, base: 2),
+   domain: (0.01, 10), stroke: blue + 1.5pt, label: $log_2(x)$),
+  (fn: x => calc.log(x, base: 10),
+   domain: (0.01, 10), stroke: red + 1.5pt, label: $log_(10)(x)$),
+)
+```
+
 ### Piecewise Functions
 
 ```typst
@@ -328,7 +377,7 @@ Set defaults that apply to all subsequent plots:
 ### Experimental Data with Fit
 
 ```typst
-#import "@preview/simple-plot:0.2.0": plot, line-plot
+#import "@preview/simple-plot:0.2.6": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -408,6 +457,25 @@ MIT License - see LICENSE file for details.
 ## Changelog
 
 All notable changes to simple-plot are documented here.
+
+### [0.2.6] - 2026-02-04
+
+#### Added
+- **Grid label breaks**: White boxes behind tick labels create elegant breaks in grid lines (enabled by default)
+- **Integer ticks by default**: Tick step defaults to 1 for cleaner integer labels
+- **Tick label step**: `xtick-label-step` and `ytick-label-step` to show labels only at every N-th tick
+- **Unit label only mode**: `unit-label-only: true` shows only "1" on axes for minimal style
+- **Axis arrows extend beyond grid**: Axes now extend 0.5 units beyond the grid by default on the arrow side
+- Axis labels (x, y) now position at the extended arrow tips
+
+#### Changed
+- Default tick label size changed from `0.65em` to `10pt` (same as axis labels)
+- Default axis label size changed from `0.8em` to `10pt` for consistent sizing
+- Grid lines no longer extend beyond the plot bounds (only axes extend)
+- Minor grid step default changed to 5 subdivisions
+
+#### Fixed
+- White box positioning for grid label breaks now properly accounts for text dimensions and minus signs
 
 ### [0.2.5] - 2026-01-27
 

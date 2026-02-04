@@ -1,13 +1,15 @@
-#import "@preview/simple-plot:0.2.0": plot, line-plot
+#import "@preview/simple-plot:0.2.6": plot, line-plot
 
 #set page(width: auto, height: auto, margin: 0.5cm)
 
+// Showcases: data points with model fit, grid-label-break
 #plot(
   xmin: 0, xmax: 10,
   ymin: 0, ymax: 12,
   xlabel: [Time (s)],
   ylabel: [Distance (m)],
-  show-grid: true,
+  show-grid: "both",
+  minor-grid-step: 5,
   axis-x-pos: "bottom",
   axis-y-pos: "left",
   // Experimental data points

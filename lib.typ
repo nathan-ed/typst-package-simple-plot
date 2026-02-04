@@ -68,14 +68,15 @@
     arrow: "stealth",
   ),
   grid: (
-    major: (stroke: luma(180) + 0.8pt),
-    minor: (stroke: luma(210) + 0.5pt),
+    // Elegant thin grid lines inspired by tkz-fct
+    major: (stroke: luma(200) + 0.5pt),
+    minor: (stroke: luma(230) + 0.3pt),
   ),
   ticks: (
     length: 0.1,
     stroke: black + 0.6pt,
     label-offset: 0.15,
-    label-size: 0.65em,
+    label-size: 10pt,
   ),
   plot: (
     stroke: blue + 1.2pt,
@@ -87,7 +88,7 @@
     fill: black,
   ),
   labels: (
-    size: 0.8em,
+    size: 10pt,
     offset: 0.3,
   ),
   xlabel-style: (
@@ -187,24 +188,19 @@
   }
 }
 
+// Generate ticks with step=1 by default, starting on integers
 #let generate-ticks(min, max, step: auto, count: auto) = {
   let actual-step = if step != auto {
     step
   } else if count != auto {
     (max - min) / count
   } else {
-    let range = max - min
-    // Use range/10 as base to ensure ~10 ticks, then round to nice number
-    let raw-step = range / 10
-    let magnitude = calc.pow(10, calc.floor(calc.log(raw-step, base: 10)))
-    let normalized = raw-step / magnitude
-    if normalized <= 1.5 { magnitude }
-    else if normalized <= 3 { magnitude * 2 }
-    else if normalized <= 7 { magnitude * 5 }
-    else { magnitude * 10 }
+    // Default to step=1 for clean integer ticks
+    1
   }
 
   let ticks = ()
+  // Start at the first integer >= min (aligned to step)
   let start = calc.ceil(min / actual-step) * actual-step
   let pos = start
   while pos <= max + 0.0001 {
@@ -294,12 +290,16 @@
 /// - ylabel-offset (auto, array): Y label offset (x, y) in cm
 /// - xtick (auto, none, array): X tick positions
 /// - ytick (auto, none, array): Y tick positions
-/// - xtick-step (auto, float): X tick step
-/// - ytick-step (auto, float): Y tick step
-/// - xtick-labels (auto, array): Custom X tick labels
-/// - ytick-labels (auto, array): Custom Y tick labels
+/// - xtick-step (auto, float): X tick step (default: 1)
+/// - ytick-step (auto, float): Y tick step (default: 1)
+/// - xtick-labels (auto, none, array): Custom X tick labels (none = no labels)
+/// - ytick-labels (auto, none, array): Custom Y tick labels (none = no labels)
+/// - xtick-label-step (auto, int): Show X tick label every N ticks (e.g., 5 = labels at 0,5,10...)
+/// - ytick-label-step (auto, int): Show Y tick label every N ticks (e.g., 5 = labels at 0,5,10...)
 /// - show-grid (auto, bool, str): Grid display ("major", "minor", "both", true, false)
-/// - minor-grid-step (auto, int): Minor grid subdivisions per major tick
+/// - minor-grid-step (auto, int): Minor grid subdivisions per major tick (default: 5)
+/// - grid-label-break (auto, bool): Break grid lines around tick labels (default: true)
+/// - unit-label-only (auto, bool): Show only "1" label on axes (not -1), useful for minimal style (default: false)
 /// - axis-x-pos (auto, float, str): X-axis y-position ("bottom", "center", or value)
 /// - axis-y-pos (auto, float, str): Y-axis x-position ("left", "center", or value)
 /// - axis-x-extend (auto, float, array): X-axis extension beyond plot (value or (left, right))
@@ -331,8 +331,12 @@
   ytick-step: auto,
   xtick-labels: auto,
   ytick-labels: auto,
+  xtick-label-step: auto,
+  ytick-label-step: auto,
   show-grid: auto,
   minor-grid-step: auto,
+  grid-label-break: auto,
+  unit-label-only: auto,
   axis-x-pos: auto,
   axis-y-pos: auto,
   axis-x-extend: auto,
@@ -374,12 +378,16 @@
   let ytick-step = resolve(ytick-step, "ytick-step", auto)
   let xtick-labels = resolve(xtick-labels, "xtick-labels", auto)
   let ytick-labels = resolve(ytick-labels, "ytick-labels", auto)
+  let xtick-label-step = resolve(xtick-label-step, "xtick-label-step", 1)
+  let ytick-label-step = resolve(ytick-label-step, "ytick-label-step", 1)
   let show-grid = resolve(show-grid, "show-grid", false)
-  let minor-grid-step = resolve(minor-grid-step, "minor-grid-step", 2)
+  let minor-grid-step = resolve(minor-grid-step, "minor-grid-step", 5)
+  let grid-label-break = resolve(grid-label-break, "grid-label-break", true)
+  let unit-label-only = resolve(unit-label-only, "unit-label-only", false)
   let axis-x-pos = resolve(axis-x-pos, "axis-x-pos", 0)
   let axis-y-pos = resolve(axis-y-pos, "axis-y-pos", 0)
-  let axis-x-extend = resolve(axis-x-extend, "axis-x-extend", 0)
-  let axis-y-extend = resolve(axis-y-extend, "axis-y-extend", 0)
+  let axis-x-extend = resolve(axis-x-extend, "axis-x-extend", (0, 0.5))
+  let axis-y-extend = resolve(axis-y-extend, "axis-y-extend", (0, 0.5))
   let show-origin = resolve(show-origin, "show-origin", true)
   let tick-label-size = resolve(tick-label-size, "tick-label-size", auto)
   let axis-label-size = resolve(axis-label-size, "axis-label-size", auto)
@@ -437,13 +445,37 @@
       rect((bx1, by1), (bx2, by2), fill: s.background.fill, stroke: s.background.stroke)
     }
 
-    // Grid extension bounds (in canvas coordinates)
-    let grid-x-start = -x-extend.at(0) * x-scale
-    let grid-x-end = width + x-extend.at(1) * x-scale
-    let grid-y-start = -y-extend.at(0) * y-scale
-    let grid-y-end = height + y-extend.at(1) * y-scale
+    // Grid bounds - grid stays within the main plot area (no extension)
+    // Only the axes extend beyond the grid
+    let grid-x-start = 0
+    let grid-x-end = width
+    let grid-y-start = 0
+    let grid-y-end = height
 
-    // Minor grid
+    // Tick and label dimensions
+    let tick-len = s.ticks.length
+    let label-offset = s.ticks.label-offset
+
+    // Helper: check if a tick value should have a label displayed
+    let x-has-label(x) = {
+      if xtick-labels == none { return false }
+      if calc.abs(x) < 0.0001 { return false }  // 0 handled separately
+      let label-interval = x-ticks.step * xtick-label-step
+      let at-interval = calc.abs(calc.rem(x, label-interval)) < 0.0001 or calc.abs(calc.rem(x, label-interval) - label-interval) < 0.0001
+      if unit-label-only and calc.abs(x - 1) > 0.0001 { return false }
+      at-interval
+    }
+
+    let y-has-label(y) = {
+      if ytick-labels == none { return false }
+      if calc.abs(y) < 0.0001 { return false }  // 0 handled separately
+      let label-interval = y-ticks.step * ytick-label-step
+      let at-interval = calc.abs(calc.rem(y, label-interval)) < 0.0001 or calc.abs(calc.rem(y, label-interval) - label-interval) < 0.0001
+      if unit-label-only and calc.abs(y - 1) > 0.0001 { return false }
+      at-interval
+    }
+
+    // Minor grid (simple, no breaks)
     if show-grid == "minor" or show-grid == "both" or show-grid == true {
       let minor-x-step = x-ticks.step / minor-grid-step
       let minor-y-step = y-ticks.step / minor-grid-step
@@ -466,7 +498,7 @@
       }
     }
 
-    // Major grid
+    // Major grid (simple, no breaks)
     if show-grid == "major" or show-grid == "both" or show-grid == true {
       for x in x-ticks.ticks {
         let cx = (x - xmin) * x-scale
@@ -475,6 +507,96 @@
       for y in y-ticks.ticks {
         let cy = (y - ymin) * y-scale
         line((grid-x-start, cy), (grid-x-end, cy), stroke: s.grid.major.stroke)
+      }
+    }
+
+    // White background rectangles for tick labels (to mask grid lines)
+    // This creates the elegant "break" effect by drawing white boxes behind labels
+    // Inspired by tkz-fct's clean grid breaks
+    if grid-label-break and (show-grid == "major" or show-grid == "both" or show-grid == true) {
+      let y-ax-canvas = (x-axis-y - ymin) * y-scale
+      let x-ax-canvas = (y-axis-x - xmin) * x-scale
+
+      // Scale box dimensions based on actual tick label size
+      // Base measurements at 10pt: char ~0.17 wide, ~0.25 tall, minus ~0.10 wide
+      let base-size = 10  // pt
+      let label-size-pt = s.ticks.label-size / 1pt
+      let scale-factor = label-size-pt / base-size
+
+      // Box padding around text - scales with font size
+      let pad-x = 0.07 * scale-factor
+      let pad-y = 0.05 * scale-factor
+
+      // Character dimensions scaled to actual font size
+      let char-width = 0.17 * scale-factor
+      let char-height = 0.25 * scale-factor
+      let minus-width = 0.10 * scale-factor
+
+      // Helper to calculate text width accounting for minus sign
+      let calc-text-width(val) = {
+        let label-text = format-number(val)
+        if val < 0 {
+          // Negative: minus sign + digits
+          minus-width + (label-text.len() - 1) * char-width
+        } else {
+          label-text.len() * char-width
+        }
+      }
+
+      // White boxes for x-axis tick labels (below axis)
+      // Labels use anchor "north", so text extends downward from anchor point
+      for x in x-ticks.ticks {
+        if x-has-label(x) and calc.abs(x - xmax) > 0.0001 {
+          let cx = (x - xmin) * x-scale
+          let text-width = calc-text-width(x)
+
+          // Anchor "north" means: anchor point is at top-center of text
+          // Text extends downward and equally left/right from anchor
+          let anchor-x = cx
+          let anchor-y = y-ax-canvas - tick-len - label-offset
+
+          rect(
+            (anchor-x - text-width / 2 - pad-x, anchor-y - char-height - pad-y),
+            (anchor-x + text-width / 2 + pad-x, anchor-y + pad-y),
+            fill: white, stroke: none
+          )
+        }
+      }
+
+      // White boxes for y-axis tick labels (left of axis)
+      // Labels use anchor "east", so text extends leftward from anchor point
+      for y in y-ticks.ticks {
+        if y-has-label(y) and calc.abs(y - ymax) > 0.0001 {
+          let cy = (y - ymin) * y-scale
+          let text-width = calc-text-width(y)
+
+          // Anchor "east" means: anchor point is at right-center of text
+          // Text extends leftward and equally up/down from anchor
+          let anchor-x = x-ax-canvas - tick-len - label-offset
+          let anchor-y = cy
+
+          rect(
+            (anchor-x - text-width - pad-x, anchor-y - char-height / 2 - pad-y),
+            (anchor-x + pad-x, anchor-y + char-height / 2 + pad-y),
+            fill: white, stroke: none
+          )
+        }
+      }
+
+      // White box for origin label if shown
+      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+        let (ox, oy) = to-canvas(0, 0)
+        // Origin label "0" uses anchor "north-east"
+        // Text extends down and left from anchor point
+        let anchor-x = ox - tick-len - 0.05
+        let anchor-y = oy - tick-len - 0.05
+        let text-width = char-width  // Single "0"
+
+        rect(
+          (anchor-x - text-width - pad-x, anchor-y - char-height - pad-y),
+          (anchor-x + pad-x, anchor-y + pad-y),
+          fill: white, stroke: none
+        )
       }
     }
 
@@ -491,30 +613,50 @@
     let y2-ext = y2 + y-extend.at(1) * y-scale
     line((x-ax, y1-ext), (x-ax, y2-ext), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
 
-    // Ticks and labels
-    let tick-len = s.ticks.length
-
+    // Ticks and labels (tick-len already defined above)
     for (i, x) in x-ticks.ticks.enumerate() {
+      // Skip tick at xmax (where arrow is)
+      if calc.abs(x - xmax) < 0.0001 { continue }
       let (cx, cy) = to-canvas(x, x-axis-y)
       line((cx, cy - tick-len), (cx, cy + tick-len), stroke: s.ticks.stroke)
-      let label = if xtick-labels == auto { format-number(x) }
-                  else if xtick-labels != none and i < xtick-labels.len() { xtick-labels.at(i) }
-                  else { "" }
-      if label != "" and label != "0" {
-        content((cx, cy - tick-len - s.ticks.label-offset),
-                text(size: s.ticks.label-size)[#label], anchor: "north")
+      // Only show label if x is a multiple of (tick-step * label-step)
+      let label-interval = x-ticks.step * xtick-label-step
+      let show-this-label = calc.abs(calc.rem(x, label-interval)) < 0.0001 or calc.abs(calc.rem(x, label-interval) - label-interval) < 0.0001
+      // If unit-label-only, only show label for x = 1 (not -1 or other values)
+      if unit-label-only and calc.abs(x - 1) > 0.0001 {
+        show-this-label = false
+      }
+      if show-this-label and xtick-labels != none {
+        let label = if xtick-labels == auto { format-number(x) }
+                    else if i < xtick-labels.len() { xtick-labels.at(i) }
+                    else { "" }
+        if label != "" and label != "0" {
+          content((cx, cy - tick-len - s.ticks.label-offset),
+                  text(size: s.ticks.label-size)[#label], anchor: "north")
+        }
       }
     }
 
     for (i, y) in y-ticks.ticks.enumerate() {
+      // Skip tick at ymax (where arrow is)
+      if calc.abs(y - ymax) < 0.0001 { continue }
       let (cx, cy) = to-canvas(y-axis-x, y)
       line((cx - tick-len, cy), (cx + tick-len, cy), stroke: s.ticks.stroke)
-      let label = if ytick-labels == auto { format-number(y) }
-                  else if ytick-labels != none and i < ytick-labels.len() { ytick-labels.at(i) }
-                  else { "" }
-      if label != "" and label != "0" {
-        content((cx - tick-len - s.ticks.label-offset, cy),
-                text(size: s.ticks.label-size)[#label], anchor: "east")
+      // Only show label if y is a multiple of (tick-step * label-step)
+      let label-interval = y-ticks.step * ytick-label-step
+      let show-this-label = calc.abs(calc.rem(y, label-interval)) < 0.0001 or calc.abs(calc.rem(y, label-interval) - label-interval) < 0.0001
+      // If unit-label-only, only show label for y = 1 (not -1 or other values)
+      if unit-label-only and calc.abs(y - 1) > 0.0001 {
+        show-this-label = false
+      }
+      if show-this-label and ytick-labels != none {
+        let label = if ytick-labels == auto { format-number(y) }
+                    else if i < ytick-labels.len() { ytick-labels.at(i) }
+                    else { "" }
+        if label != "" and label != "0" {
+          content((cx - tick-len - s.ticks.label-offset, cy),
+                  text(size: s.ticks.label-size)[#label], anchor: "east")
+        }
       }
     }
 
@@ -525,21 +667,27 @@
               text(size: s.ticks.label-size)[0], anchor: "north-east")
     }
 
-    // Axis labels
+    // Axis labels - positioned at the extended arrow tips
     if xlabel != none {
-      let (lx, ly) = if xlabel-pos == "end" { to-canvas(xmax, x-axis-y) }
-                     else if xlabel-pos == "center" { to-canvas((xmin + xmax) / 2, x-axis-y) }
-                     else if type(xlabel-pos) == array { to-canvas(xlabel-pos.at(0), xlabel-pos.at(1)) }
-                     else { to-canvas(xmax, x-axis-y) }
+      let (lx, ly) = if xlabel-pos == "end" {
+        // Position at extended arrow tip
+        let (base-x, base-y) = to-canvas(xmax, x-axis-y)
+        (base-x + x-extend.at(1) * x-scale, base-y)
+      } else if xlabel-pos == "center" { to-canvas((xmin + xmax) / 2, x-axis-y) }
+        else if type(xlabel-pos) == array { to-canvas(xlabel-pos.at(0), xlabel-pos.at(1)) }
+        else { to-canvas(xmax, x-axis-y) }
       let (ox, oy) = xlabel-offset
       content((lx + ox, ly + oy), text(size: s.labels.size)[#xlabel], anchor: xlabel-anchor)
     }
 
     if ylabel != none {
-      let (lx, ly) = if ylabel-pos == "end" { to-canvas(y-axis-x, ymax) }
-                     else if ylabel-pos == "center" { to-canvas(y-axis-x, (ymin + ymax) / 2) }
-                     else if type(ylabel-pos) == array { to-canvas(ylabel-pos.at(0), ylabel-pos.at(1)) }
-                     else { to-canvas(y-axis-x, ymax) }
+      let (lx, ly) = if ylabel-pos == "end" {
+        // Position at extended arrow tip
+        let (base-x, base-y) = to-canvas(y-axis-x, ymax)
+        (base-x, base-y + y-extend.at(1) * y-scale)
+      } else if ylabel-pos == "center" { to-canvas(y-axis-x, (ymin + ymax) / 2) }
+        else if type(ylabel-pos) == array { to-canvas(ylabel-pos.at(0), ylabel-pos.at(1)) }
+        else { to-canvas(y-axis-x, ymax) }
       let (ox, oy) = ylabel-offset
       content((lx + ox, ly + oy), text(size: s.labels.size)[#ylabel], anchor: ylabel-anchor)
     }

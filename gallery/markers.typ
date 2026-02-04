@@ -1,8 +1,8 @@
-#import "@preview/simple-plot:0.2.0": plot, scatter
+#import "@preview/simple-plot:0.2.6": plot, scatter
 
 #set page(width: auto, height: auto, margin: 0.5cm)
 
-// Showcase different marker types
+// Showcase different marker types with grid-label-break
 #plot(
   xmin: 0, xmax: 8,
   ymin: 0, ymax: 8,
