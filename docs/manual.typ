@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.2.6": plot, plot-fn, scatter, line-plot, func-plot, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.3.0": plot, plot-fn, scatter, line-plot, func-plot, set-plot-defaults, reset-plot-defaults
 
 // =============================================================================
 // DOCUMENT SETUP
@@ -89,7 +89,7 @@
   #v(1cm)
   #text(size: 11pt)[
     A lightweight library for creating elegant mathematical plots\
-    Version 0.2.6\
+    Version 0.3.0\
     Nathan Scheinmann
   ]
 ]
@@ -118,7 +118,7 @@
 - Scatter plots and line plots with customizable markers
 - Clean integer-based tick system by default
 - Major and minor grid with elegant styling
-- White box masking for tick labels (grid-label-break)
+- Gap-based grid line breaks around tick labels (grid-label-break)
 - Automatic axis extension beyond grid
 - Flexible axis positioning (origin, bottom/left, custom)
 - Multiple label display options (unit-label-only, label-step)
@@ -130,7 +130,7 @@
 Import the package in your Typst document:
 
 ```typst
-#import "@preview/simple-plot:0.2.6": plot
+#import "@preview/simple-plot:0.3.0": plot
 ```
 
 == Quick Start
@@ -410,7 +410,7 @@ Control the number of subdivisions with `minor-grid-step`:
 
 == Grid Label Break
 
-The `grid-label-break` option (enabled by default) draws white boxes behind tick labels, creating an elegant effect where grid lines appear to stop at the labels:
+The `grid-label-break` option (enabled by default) draws grid lines with gaps around tick labels, creating an elegant break effect. Unlike a white-box approach, this works on any background color:
 
 #example-full(
   [```typst
@@ -980,7 +980,7 @@ Override default styles with the `style` parameter:
   [*Parameter*], [*Type*], [*Default*], [*Description*],
   [`show-grid`], [bool/string], [false], [true, false, "major", "minor", "both"],
   [`minor-grid-step`], [int], [5], [Subdivisions per major tick],
-  [`grid-label-break`], [bool], [true], [White boxes behind labels],
+  [`grid-label-break`], [bool], [true], [Break grid lines around labels],
 )
 
 #v(0.5em)

@@ -406,6 +406,7 @@
     s.labels.size = axis-label-size
   }
 
+  // Scale factors in CeTZ canvas units
   let x-scale = width / (xmax - xmin)
   let y-scale = height / (ymax - ymin)
 
@@ -452,7 +453,7 @@
     let grid-y-start = 0
     let grid-y-end = height
 
-    // Tick and label dimensions
+    // Tick and label dimensions (already unitless floats)
     let tick-len = s.ticks.length
     let label-offset = s.ticks.label-offset
 
@@ -475,7 +476,151 @@
       at-interval
     }
 
-    // Minor grid (simple, no breaks)
+    // Pre-compute label exclusion zones for gap-based grid-label-break
+    // Instead of drawing full grid lines and overlaying white rectangles,
+    // we draw grid lines with gaps where labels are placed.
+    // This works on any background color.
+    let x-break-zones = ()  // Each: (x-left, x-right, gap-y-bottom, gap-y-top)
+    let y-break-zones = ()  // Each: (y-bottom, y-top, gap-x-left, gap-x-right)
+
+    if grid-label-break and (show-grid == "major" or show-grid == "both" or show-grid == true) {
+      let y-ax-canvas = (x-axis-y - ymin) * y-scale
+      let x-ax-canvas = (y-axis-x - xmin) * x-scale
+
+      let scale-factor = 1.0
+      let pad-x = 0.07 * scale-factor
+      let pad-y = 0.05 * scale-factor
+      let char-width = 0.17 * scale-factor
+      let char-height = 0.25 * scale-factor
+      let minus-width = 0.10 * scale-factor
+
+      let calc-text-width(val) = {
+        let label-text = format-number(val)
+        if val < 0 {
+          minus-width + (label-text.len() - 1) * char-width
+        } else {
+          label-text.len() * char-width
+        }
+      }
+
+      // X-axis tick labels (below axis, anchor "north")
+      for x in x-ticks.ticks {
+        if x-has-label(x) and calc.abs(x - xmax) > 0.0001 {
+          let cx = (x - xmin) * x-scale
+          let text-width = calc-text-width(x)
+          let anchor-x = cx
+          let anchor-y = y-ax-canvas - tick-len - label-offset
+
+          x-break-zones.push((
+            anchor-x - text-width / 2 - pad-x,
+            anchor-x + text-width / 2 + pad-x,
+            anchor-y - char-height - pad-y,
+            anchor-y + pad-y,
+          ))
+        }
+      }
+
+      // Y-axis tick labels (left of axis, anchor "east")
+      for y in y-ticks.ticks {
+        if y-has-label(y) and calc.abs(y - ymax) > 0.0001 {
+          let cy = (y - ymin) * y-scale
+          let text-width = calc-text-width(y)
+          let anchor-x = x-ax-canvas - tick-len - label-offset
+          let anchor-y = cy
+
+          y-break-zones.push((
+            anchor-y - char-height / 2 - pad-y,
+            anchor-y + char-height / 2 + pad-y,
+            anchor-x - text-width - pad-x,
+            anchor-x + pad-x,
+          ))
+        }
+      }
+
+      // Origin label zone (anchor "north-east", text extends down and left)
+      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+        let (ox, oy) = to-canvas(0, 0)
+        let anchor-x = ox - tick-len - 0.05
+        let anchor-y = oy - tick-len - 0.05
+        let text-width = char-width  // Single "0"
+
+        // Origin label can intersect both vertical and horizontal grid lines
+        x-break-zones.push((
+          anchor-x - text-width - pad-x,
+          anchor-x + pad-x,
+          anchor-y - char-height - pad-y,
+          anchor-y + pad-y,
+        ))
+        y-break-zones.push((
+          anchor-y - char-height - pad-y,
+          anchor-y + pad-y,
+          anchor-x - text-width - pad-x,
+          anchor-x + pad-x,
+        ))
+      }
+    }
+
+    // Helper: draw a vertical line with gaps for break zones
+    let draw-vline-with-gaps(cx, y-start, y-end, stroke-style) = {
+      // Collect gap y-ranges that intersect this vertical line's x position
+      let gaps = ()
+      for zone in x-break-zones {
+        let (x-left, x-right, gap-y-bottom, gap-y-top) = zone
+        if cx >= x-left and cx <= x-right {
+          gaps.push((gap-y-bottom, gap-y-top))
+        }
+      }
+
+      if gaps.len() == 0 {
+        line((cx, y-start), (cx, y-end), stroke: stroke-style)
+      } else {
+        // Sort gaps by bottom y
+        let sorted-gaps = gaps.sorted(key: g => g.at(0))
+        let current-y = y-start
+        for (gap-bottom, gap-top) in sorted-gaps {
+          let seg-end = calc.max(current-y, calc.min(gap-bottom, y-end))
+          if seg-end > current-y + 0.001 {
+            line((cx, current-y), (cx, seg-end), stroke: stroke-style)
+          }
+          current-y = calc.max(current-y, gap-top)
+        }
+        if current-y < y-end - 0.001 {
+          line((cx, current-y), (cx, y-end), stroke: stroke-style)
+        }
+      }
+    }
+
+    // Helper: draw a horizontal line with gaps for break zones
+    let draw-hline-with-gaps(cy, x-start, x-end, stroke-style) = {
+      // Collect gap x-ranges that intersect this horizontal line's y position
+      let gaps = ()
+      for zone in y-break-zones {
+        let (y-bottom, y-top, gap-x-left, gap-x-right) = zone
+        if cy >= y-bottom and cy <= y-top {
+          gaps.push((gap-x-left, gap-x-right))
+        }
+      }
+
+      if gaps.len() == 0 {
+        line((x-start, cy), (x-end, cy), stroke: stroke-style)
+      } else {
+        // Sort gaps by left x
+        let sorted-gaps = gaps.sorted(key: g => g.at(0))
+        let current-x = x-start
+        for (gap-left, gap-right) in sorted-gaps {
+          let seg-end = calc.max(current-x, calc.min(gap-left, x-end))
+          if seg-end > current-x + 0.001 {
+            line((current-x, cy), (seg-end, cy), stroke: stroke-style)
+          }
+          current-x = calc.max(current-x, gap-right)
+        }
+        if current-x < x-end - 0.001 {
+          line((current-x, cy), (x-end, cy), stroke: stroke-style)
+        }
+      }
+    }
+
+    // Minor grid
     if show-grid == "minor" or show-grid == "both" or show-grid == true {
       let minor-x-step = x-ticks.step / minor-grid-step
       let minor-y-step = y-ticks.step / minor-grid-step
@@ -486,117 +631,43 @@
         let x = xmin + i * minor-x-step
         if x <= xmax {
           let cx = (x - xmin) * x-scale
-          line((cx, grid-y-start), (cx, grid-y-end), stroke: s.grid.minor.stroke)
+          if grid-label-break and x-break-zones.len() + y-break-zones.len() > 0 {
+            draw-vline-with-gaps(cx, grid-y-start, grid-y-end, s.grid.minor.stroke)
+          } else {
+            line((cx, grid-y-start), (cx, grid-y-end), stroke: s.grid.minor.stroke)
+          }
         }
       }
       for i in range(ny) {
         let y = ymin + i * minor-y-step
         if y <= ymax {
           let cy = (y - ymin) * y-scale
-          line((grid-x-start, cy), (grid-x-end, cy), stroke: s.grid.minor.stroke)
+          if grid-label-break and x-break-zones.len() + y-break-zones.len() > 0 {
+            draw-hline-with-gaps(cy, grid-x-start, grid-x-end, s.grid.minor.stroke)
+          } else {
+            line((grid-x-start, cy), (grid-x-end, cy), stroke: s.grid.minor.stroke)
+          }
         }
       }
     }
 
-    // Major grid (simple, no breaks)
+    // Major grid
     if show-grid == "major" or show-grid == "both" or show-grid == true {
       for x in x-ticks.ticks {
         let cx = (x - xmin) * x-scale
-        line((cx, grid-y-start), (cx, grid-y-end), stroke: s.grid.major.stroke)
+        if grid-label-break and x-break-zones.len() + y-break-zones.len() > 0 {
+          draw-vline-with-gaps(cx, grid-y-start, grid-y-end, s.grid.major.stroke)
+        } else {
+          line((cx, grid-y-start), (cx, grid-y-end), stroke: s.grid.major.stroke)
+        }
       }
       for y in y-ticks.ticks {
         let cy = (y - ymin) * y-scale
-        line((grid-x-start, cy), (grid-x-end, cy), stroke: s.grid.major.stroke)
-      }
-    }
-
-    // White background rectangles for tick labels (to mask grid lines)
-    // This creates the elegant "break" effect by drawing white boxes behind labels
-    // Inspired by tkz-fct's clean grid breaks
-    if grid-label-break and (show-grid == "major" or show-grid == "both" or show-grid == true) {
-      let y-ax-canvas = (x-axis-y - ymin) * y-scale
-      let x-ax-canvas = (y-axis-x - xmin) * x-scale
-
-      // Scale box dimensions based on actual tick label size
-      // Base measurements at 10pt: char ~0.17 wide, ~0.25 tall, minus ~0.10 wide
-      let base-size = 10  // pt
-      let label-size-pt = s.ticks.label-size / 1pt
-      let scale-factor = label-size-pt / base-size
-
-      // Box padding around text - scales with font size
-      let pad-x = 0.07 * scale-factor
-      let pad-y = 0.05 * scale-factor
-
-      // Character dimensions scaled to actual font size
-      let char-width = 0.17 * scale-factor
-      let char-height = 0.25 * scale-factor
-      let minus-width = 0.10 * scale-factor
-
-      // Helper to calculate text width accounting for minus sign
-      let calc-text-width(val) = {
-        let label-text = format-number(val)
-        if val < 0 {
-          // Negative: minus sign + digits
-          minus-width + (label-text.len() - 1) * char-width
+        if grid-label-break and x-break-zones.len() + y-break-zones.len() > 0 {
+          draw-hline-with-gaps(cy, grid-x-start, grid-x-end, s.grid.major.stroke)
         } else {
-          label-text.len() * char-width
+          line((grid-x-start, cy), (grid-x-end, cy), stroke: s.grid.major.stroke)
         }
-      }
-
-      // White boxes for x-axis tick labels (below axis)
-      // Labels use anchor "north", so text extends downward from anchor point
-      for x in x-ticks.ticks {
-        if x-has-label(x) and calc.abs(x - xmax) > 0.0001 {
-          let cx = (x - xmin) * x-scale
-          let text-width = calc-text-width(x)
-
-          // Anchor "north" means: anchor point is at top-center of text
-          // Text extends downward and equally left/right from anchor
-          let anchor-x = cx
-          let anchor-y = y-ax-canvas - tick-len - label-offset
-
-          rect(
-            (anchor-x - text-width / 2 - pad-x, anchor-y - char-height - pad-y),
-            (anchor-x + text-width / 2 + pad-x, anchor-y + pad-y),
-            fill: white, stroke: none
-          )
-        }
-      }
-
-      // White boxes for y-axis tick labels (left of axis)
-      // Labels use anchor "east", so text extends leftward from anchor point
-      for y in y-ticks.ticks {
-        if y-has-label(y) and calc.abs(y - ymax) > 0.0001 {
-          let cy = (y - ymin) * y-scale
-          let text-width = calc-text-width(y)
-
-          // Anchor "east" means: anchor point is at right-center of text
-          // Text extends leftward and equally up/down from anchor
-          let anchor-x = x-ax-canvas - tick-len - label-offset
-          let anchor-y = cy
-
-          rect(
-            (anchor-x - text-width - pad-x, anchor-y - char-height / 2 - pad-y),
-            (anchor-x + pad-x, anchor-y + char-height / 2 + pad-y),
-            fill: white, stroke: none
-          )
-        }
-      }
-
-      // White box for origin label if shown
-      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
-        let (ox, oy) = to-canvas(0, 0)
-        // Origin label "0" uses anchor "north-east"
-        // Text extends down and left from anchor point
-        let anchor-x = ox - tick-len - 0.05
-        let anchor-y = oy - tick-len - 0.05
-        let text-width = char-width  // Single "0"
-
-        rect(
-          (anchor-x - text-width - pad-x, anchor-y - char-height - pad-y),
-          (anchor-x + pad-x, anchor-y + pad-y),
-          fill: white, stroke: none
-        )
       }
     }
 
@@ -626,12 +697,16 @@
       if unit-label-only and calc.abs(x - 1) > 0.0001 {
         show-this-label = false
       }
+      // Avoid duplicate "0" when explicit origin label is enabled.
+      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 and calc.abs(x) < 0.0001 {
+        show-this-label = false
+      }
       if show-this-label and xtick-labels != none {
         let label = if xtick-labels == auto { format-number(x) }
                     else if i < xtick-labels.len() { xtick-labels.at(i) }
                     else { "" }
         if label != "" and label != "0" {
-          content((cx, cy - tick-len - s.ticks.label-offset),
+          content((cx, cy - tick-len - label-offset),
                   text(size: s.ticks.label-size)[#label], anchor: "north")
         }
       }
@@ -649,12 +724,16 @@
       if unit-label-only and calc.abs(y - 1) > 0.0001 {
         show-this-label = false
       }
+      // Avoid duplicate "0" when explicit origin label is enabled.
+      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 and calc.abs(y) < 0.0001 {
+        show-this-label = false
+      }
       if show-this-label and ytick-labels != none {
         let label = if ytick-labels == auto { format-number(y) }
                     else if i < ytick-labels.len() { ytick-labels.at(i) }
                     else { "" }
         if label != "" and label != "0" {
-          content((cx - tick-len - s.ticks.label-offset, cy),
+          content((cx - tick-len - label-offset, cy),
                   text(size: s.ticks.label-size)[#label], anchor: "east")
         }
       }

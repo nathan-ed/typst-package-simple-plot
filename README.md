@@ -4,6 +4,10 @@ A simple, pgfplots-like function plotting library for Typst. Create beautiful ma
 
 > **Note:** This package is built on top of [CeTZ](https://github.com/cetz-package/cetz) v0.4.2.
 
+## Manual
+
+A full manual is available in [docs/manual.pdf](docs/manual.pdf), with a Typst source version in [docs/manual.typ](docs/manual.typ)
+
 ## Gallery
 
 Click on an image to see the source code.
@@ -32,7 +36,7 @@ Click on an image to see the source code.
 ## Quick Start
 
 ```typst
-#import "@preview/simple-plot:0.2.6": plot
+#import "@preview/simple-plot:0.3.0": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -49,7 +53,7 @@ Click on an image to see the source code.
 ### Plotting Functions
 
 ```typst
-#import "@preview/simple-plot:0.2.6": plot
+#import "@preview/simple-plot:0.3.0": plot
 
 // Single function
 #plot(
@@ -72,7 +76,7 @@ Click on an image to see the source code.
 ### Scatter Plots
 
 ```typst
-#import "@preview/simple-plot:0.2.6": plot, scatter
+#import "@preview/simple-plot:0.3.0": plot, scatter
 
 #plot(
   xmin: 0, xmax: 10,
@@ -89,7 +93,7 @@ Click on an image to see the source code.
 ### Line Plots with Markers
 
 ```typst
-#import "@preview/simple-plot:0.2.6": plot, line-plot
+#import "@preview/simple-plot:0.3.0": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -110,7 +114,7 @@ Click on an image to see the source code.
 Control the placement of function labels to avoid overlapping with your graphs using `label-pos` and `label-side`:
 
 ```typst
-#import "@preview/simple-plot:0.2.6": plot
+#import "@preview/simple-plot:0.3.0": plot
 
 #plot(
   xmin: -5, xmax: 5,
@@ -170,7 +174,7 @@ Functions use Typst's `calc` module:
 | `xlabel`, `ylabel` | content | none | Axis labels |
 | `show-grid` | bool/str | false | Grid display: `true`, `false`, `"major"`, `"minor"`, `"both"` |
 | `minor-grid-step` | int | 5 | Minor grid subdivisions per major tick |
-| `grid-label-break` | bool | true | Draw white boxes behind labels to break grid lines |
+| `grid-label-break` | bool | true | Break grid lines with gaps around tick labels (works on any background) |
 | `axis-x-pos` | float/str | 0 | X-axis position: value, `"bottom"`, `"center"` |
 | `axis-y-pos` | float/str | 0 | Y-axis position: value, `"left"`, `"center"` |
 | `axis-x-extend` | float/array | (0, 0.5) | Extend X-axis beyond grid: value or `(left, right)` |
@@ -277,7 +281,7 @@ Each function is a dictionary with:
 Set defaults that apply to all subsequent plots:
 
 ```typst
-#import "@preview/simple-plot:0.2.6": plot, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.3.0": plot, set-plot-defaults, reset-plot-defaults
 
 // Set defaults
 #set-plot-defaults(
@@ -377,7 +381,7 @@ For logarithms with an arbitrary base, use `calc.log(x, base: b)` (or `calc.ln(x
 ### Experimental Data with Fit
 
 ```typst
-#import "@preview/simple-plot:0.2.6": plot, line-plot
+#import "@preview/simple-plot:0.3.0": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -458,10 +462,19 @@ MIT License - see LICENSE file for details.
 
 All notable changes to simple-plot are documented here.
 
+### [0.3.0] - 2026-02-18
+
+#### Changed
+- **Grid label break**: Replaced white-box overlay approach with gap-based grid drawing. Grid lines are now drawn with gaps where labels are placed, instead of overlaying white rectangles. This makes `grid-label-break` work on any background color.
+- Internal refactor in tick label placement to consistently reuse the computed `label-offset` value.
+
+#### Fixed
+- Origin label handling now avoids duplicate `0` tick labels when `show-origin: true` and axes cross at the origin.
+
 ### [0.2.6] - 2026-02-04
 
 #### Added
-- **Grid label breaks**: White boxes behind tick labels create elegant breaks in grid lines (enabled by default)
+- **Grid label breaks**: Gaps in grid lines around tick labels for an elegant break effect (enabled by default)
 - **Integer ticks by default**: Tick step defaults to 1 for cleaner integer labels
 - **Tick label step**: `xtick-label-step` and `ytick-label-step` to show labels only at every N-th tick
 - **Unit label only mode**: `unit-label-only: true` shows only "1" on axes for minimal style
@@ -475,7 +488,7 @@ All notable changes to simple-plot are documented here.
 - Minor grid step default changed to 5 subdivisions
 
 #### Fixed
-- White box positioning for grid label breaks now properly accounts for text dimensions and minus signs
+- Gap sizing for grid label breaks now properly accounts for text dimensions and minus signs
 
 ### [0.2.5] - 2026-01-27
 
