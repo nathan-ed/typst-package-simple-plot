@@ -431,7 +431,46 @@
                 else { (ticks: ytick, step: if ytick.len() > 1 { ytick.at(1) - ytick.at(0) } else { 1 }) }
 
   cetz.canvas(length: 1cm, {
+    // Save Typst's native `line` before cetz shadows it — needed for pattern() fills
+    let native-line = line
     import cetz.draw: *
+
+    // ── Hatch pattern builder ────────────────────────────────────────────────
+    // Returns a Typst fill paint: a solid color or a repeating pattern.
+    // style: none | "ne" | "nw" | "h" | "v" | "cross" | "grid"
+    // spacing: absolute length (e.g. 5pt)
+    // stroke-style: a Typst stroke value
+    let make-hatch-pattern(style, spacing, stroke-style) = {
+      if style == none { return none }
+      let s = spacing
+      if style == "ne" {
+        tiling(size: (s, s))[
+          #place(native-line(start: (0pt, s), end: (s, 0pt), stroke: stroke-style))
+        ]
+      } else if style == "nw" {
+        tiling(size: (s, s))[
+          #place(native-line(start: (0pt, 0pt), end: (s, s), stroke: stroke-style))
+        ]
+      } else if style == "h" {
+        tiling(size: (s, s))[
+          #place(native-line(start: (0pt, s / 2), end: (s, s / 2), stroke: stroke-style))
+        ]
+      } else if style == "v" {
+        tiling(size: (s, s))[
+          #place(native-line(start: (s / 2, 0pt), end: (s / 2, s), stroke: stroke-style))
+        ]
+      } else if style == "cross" {
+        tiling(size: (s, s))[
+          #place(native-line(start: (0pt, s), end: (s, 0pt), stroke: stroke-style))
+          #place(native-line(start: (0pt, 0pt), end: (s, s), stroke: stroke-style))
+        ]
+      } else if style == "grid" {
+        tiling(size: (s, s))[
+          #place(native-line(start: (0pt, s / 2), end: (s, s / 2), stroke: stroke-style))
+          #place(native-line(start: (s / 2, 0pt), end: (s / 2, s), stroke: stroke-style))
+        ]
+      }
+    }
 
     set-style(
       mark: (fill: black, scale: 1.5),
@@ -815,7 +854,7 @@
         for i in range(samples + 1) {
           let x = domain-min + i * step
           let y = fn(x)
-          if y != none and not (y).is-nan() {
+          if y != none and not float(y).is-nan() {
             let (cx, cy) = to-canvas(x, y)
             all-points.push((cx, cy, i))
             // Check if point is inside clip area for markers
@@ -851,7 +890,7 @@
           let label-domain-max = if domain == none { x-clip-max } else { domain-max }
           let lx = label-domain-min + (label-domain-max - label-domain-min) * label-pos
           let ly = fn(lx)
-          if ly != none and not (ly).is-nan() and ly >= y-clip-min and ly <= y-clip-max {
+          if ly != none and not float(ly).is-nan() and ly >= y-clip-min and ly <= y-clip-max {
             let (cx, cy) = to-canvas(lx, ly)
             content((cx, cy), label, anchor: label-anchor)
           }
@@ -879,6 +918,155 @@
           let (cx, cy) = canvas-points.at(idx)
           content((cx, cy), label, anchor: label-anchor)
         }
+
+      // ── Fill below a single function to a baseline ─────────────────────
+      // Keys: fill:fn, baseline:float, domain:(a,b), color:color,
+      //       hatch:style, hatch-spacing:length, hatch-stroke:stroke, samples:int
+      } else if "fill" in func-spec {
+        let fill-fn      = func-spec.at("fill")
+        let baseline     = func-spec.at("baseline", default: 0.0)
+        let domain       = func-spec.at("domain", default: (xmin, xmax))
+        let samples      = func-spec.at("samples", default: 80)
+        let fill-color   = func-spec.at("color", default: luma(220))
+        let hatch-style  = func-spec.at("hatch", default: none)
+        let hatch-sp     = func-spec.at("hatch-spacing", default: 5pt)
+        let hatch-stroke = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
+
+        let (d1, d2) = domain
+        let step = (d2 - d1) / samples
+        let top-pts = ()
+        let bot-pts = ()
+
+        for i in range(samples + 1) {
+          let x = d1 + i * step
+          let y = fill-fn(x)
+          if y != none and not float(y).is-nan() {
+            let (cx, cy-top) = to-canvas(x, float(y))
+            let (_, cy-bot) = to-canvas(x, float(baseline))
+            top-pts.push((cx, cy-top))
+            bot-pts.push((cx, cy-bot))
+          }
+        }
+
+        let all-pts = top-pts + bot-pts.rev()
+        if all-pts.len() > 2 {
+          let paint = if hatch-style != none {
+            make-hatch-pattern(hatch-style, hatch-sp, hatch-stroke)
+          } else { fill-color }
+          line(..all-pts, close: true, fill: paint, stroke: none)
+        }
+
+      // ── Fill between two functions ───────────────────────────────────────
+      // Keys: fill-between:(fn1, fn2), domain:(a,b), color:color,
+      //       hatch:style, hatch-spacing:length, hatch-stroke:stroke, samples:int
+      // Alias: fill-fn1: fn1 (legacy key, fn2 via fill-fn2:)
+      } else if "fill-between" in func-spec or "fill-fn1" in func-spec {
+        let (fn1, fn2) = if "fill-between" in func-spec {
+          func-spec.at("fill-between")
+        } else {
+          (func-spec.at("fill-fn1"), func-spec.at("fill-fn2", default: x => 0.0))
+        }
+        let domain       = func-spec.at("domain", default: (xmin, xmax))
+        let samples      = func-spec.at("samples", default: 80)
+        let fill-color   = func-spec.at("color",
+                             default: func-spec.at("fill", default: luma(220)))
+        let hatch-style  = func-spec.at("hatch", default: none)
+        let hatch-sp     = func-spec.at("hatch-spacing", default: 5pt)
+        let hatch-stroke = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
+
+        let (d1, d2) = domain
+        let step = (d2 - d1) / samples
+        let fwd-pts = ()
+        let bwd-pts = ()
+
+        for i in range(samples + 1) {
+          let x = d1 + i * step
+          let y1 = fn1(x)
+          let y2 = fn2(x)
+          if (y1 != none and not float(y1).is-nan()
+              and y2 != none and not float(y2).is-nan()) {
+            let (cx, cy-top) = to-canvas(x, calc.max(float(y1), float(y2)))
+            let (_, cy-bot)  = to-canvas(x, calc.min(float(y1), float(y2)))
+            fwd-pts.push((cx, cy-top))
+            bwd-pts.push((cx, cy-bot))
+          }
+        }
+
+        let all-pts = fwd-pts + bwd-pts.rev()
+        if all-pts.len() > 2 {
+          let paint = if hatch-style != none {
+            make-hatch-pattern(hatch-style, hatch-sp, hatch-stroke)
+          } else { fill-color }
+          line(..all-pts, close: true, fill: paint, stroke: none)
+        }
+
+      // ── Text annotation at data coordinates ─────────────────────────────
+      // Keys: annotation:content, pos:(x,y), anchor:string, size:length
+      } else if "annotation" in func-spec {
+        let ann-text   = func-spec.at("annotation")
+        let ann-pos    = func-spec.at("pos")
+        let ann-anchor = func-spec.at("anchor", default: "center")
+        let ann-size   = func-spec.at("size", default: 10pt)
+        let (ax, ay)   = ann-pos
+        let (cx, cy)   = to-canvas(ax, ay)
+        content((cx, cy), text(ann-text, size: ann-size), anchor: ann-anchor)
+
+      // ── Riemann sum rectangles ───────────────────────────────────────────
+      // Keys: riemann:fn, domain:(a,b), n:int, method:"left"|"right"|"mid",
+      //       baseline:float, color:color, stroke:stroke,
+      //       hatch:style, hatch-spacing:length, hatch-stroke:stroke
+      } else if "riemann" in func-spec {
+        let r-fn        = func-spec.at("riemann")
+        let r-domain    = func-spec.at("domain", default: (xmin, xmax))
+        let r-n         = func-spec.at("n", default: 4)
+        let r-method    = func-spec.at("method", default: "right")
+        let r-base      = func-spec.at("baseline", default: 0.0)
+        let fill-color  = func-spec.at("color", default: luma(220))
+        let rect-stroke = func-spec.at("stroke", default: luma(80) + 0.6pt)
+        let hatch-style = func-spec.at("hatch", default: none)
+        let hatch-sp    = func-spec.at("hatch-spacing", default: 5pt)
+        let hatch-stk   = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
+
+        let (d1, d2) = r-domain
+        let w = (d2 - d1) / r-n
+
+        for i in range(r-n) {
+          let xl = d1 + i * w
+          let xr = d1 + (i + 1) * w
+          let xeval = if r-method == "left"  { xl }
+                      else if r-method == "right" { xr }
+                      else { (xl + xr) / 2.0 }
+          let y = r-fn(xeval)
+          if y != none and not float(y).is-nan() {
+            let yv = float(y)
+            let (cxl, cybot) = to-canvas(xl, r-base)
+            let (cxr, cytop) = to-canvas(xr, yv)
+            let paint = if hatch-style != none {
+              make-hatch-pattern(hatch-style, hatch-sp, hatch-stk)
+            } else { fill-color }
+            rect((cxl, cybot), (cxr, cytop), fill: paint, stroke: rect-stroke)
+          }
+        }
+
+      // ── Vertical reference line ──────────────────────────────────────────
+      // Keys: vline:x, ymin:float, ymax:float, stroke:stroke
+      } else if "vline" in func-spec {
+        let x0    = func-spec.at("vline")
+        let vy1   = func-spec.at("ymin", default: ymin)
+        let vy2   = func-spec.at("ymax", default: ymax)
+        let (cx, cy1) = to-canvas(x0, vy1)
+        let (_, cy2)  = to-canvas(x0, vy2)
+        line((cx, cy1), (cx, cy2), stroke: stroke-style)
+
+      // ── Horizontal reference line ────────────────────────────────────────
+      // Keys: hline:y, xmin:float, xmax:float, stroke:stroke
+      } else if "hline" in func-spec {
+        let y0    = func-spec.at("hline")
+        let hx1   = func-spec.at("xmin", default: xmin)
+        let hx2   = func-spec.at("xmax", default: xmax)
+        let (cx1, cy) = to-canvas(hx1, y0)
+        let (cx2, _)  = to-canvas(hx2, y0)
+        line((cx1, cy), (cx2, cy), stroke: stroke-style)
       }
 
       if mark-type != "none" and points-to-draw.len() > 0 {
@@ -912,7 +1100,7 @@
     for i in range(samples + 1) {
       let x = domain.at(0) + i * step
       let y = fn(x)
-      if y != none and not (y).is-nan() { ys.push(y) }
+      if y != none and not float(y).is-nan() { ys.push(y) }
     }
     let min-y = calc.min(..ys)
     let max-y = calc.max(..ys)
@@ -986,6 +1174,145 @@
     mark: mark, mark-size: mark-size, mark-fill: mark-fill,
     mark-stroke: mark-stroke, mark-interval: mark-interval,
     label: label, label-pos: label-pos, label-anchor: label-anchor,
+  )
+  if domain != auto { spec.insert("domain", domain) }
+  spec
+}
+
+/// Build a fill-below-curve series spec.
+///
+/// Fills the region between `fn` and `baseline` (default 0) over `domain`.
+///
+/// Example:
+/// ```typst
+/// #plot(...,
+///   fill-area(x => calc.sin(x), domain: (0, calc.pi), color: blue.lighten(70%)),
+///   (fn: x => calc.sin(x), stroke: blue + 1.2pt),
+/// )
+/// ```
+#let fill-area(
+  fn,
+  domain: auto,
+  baseline: 0.0,
+  color: luma(220),
+  hatch: none,
+  hatch-spacing: 5pt,
+  hatch-stroke: luma(80) + 0.5pt,
+  samples: 80,
+) = {
+  let spec = (
+    fill: fn, baseline: baseline, color: color,
+    hatch: hatch, hatch-spacing: hatch-spacing, hatch-stroke: hatch-stroke,
+    samples: samples,
+  )
+  if domain != auto { spec.insert("domain", domain) }
+  spec
+}
+
+/// Build a fill-between-curves series spec.
+///
+/// Fills the region between `fn1` and `fn2` over `domain`.
+/// The filled shape always encloses both curves (uses max/min at each sample).
+///
+/// Hatch styles: `"ne"` (/), `"nw"` (\), `"h"`, `"v"`, `"cross"`, `"grid"`.
+///
+/// Example:
+/// ```typst
+/// #plot(...,
+///   area-between(x => calc.exp(x), x => x + 1, domain: (0, 1),
+///                color: green.lighten(60%)),
+/// )
+/// ```
+#let area-between(
+  fn1,
+  fn2,
+  domain: auto,
+  color: luma(220),
+  hatch: none,
+  hatch-spacing: 5pt,
+  hatch-stroke: luma(80) + 0.5pt,
+  samples: 80,
+) = {
+  let spec = (
+    fill-between: (fn1, fn2), color: color,
+    hatch: hatch, hatch-spacing: hatch-spacing, hatch-stroke: hatch-stroke,
+    samples: samples,
+  )
+  if domain != auto { spec.insert("domain", domain) }
+  spec
+}
+
+/// Place a text annotation at a data-coordinate position.
+///
+/// Example:
+/// ```typst
+/// #plot(...,
+///   note([AV : $x = 0$], pos: (0.4, -2.5), anchor: "west"),
+/// )
+/// ```
+#let note(
+  body,
+  pos,
+  anchor: "center",
+  size: 9pt,
+) = (annotation: body, pos: pos, anchor: anchor, size: size)
+
+/// Vertical reference line at x = `x0`.
+///
+/// Example:
+/// ```typst
+/// (vline: 1.0, stroke: (dash: "dashed") + luma(100) + 0.6pt)
+/// ```
+#let vline(x0, stroke: luma(100) + 0.6pt, ymin: auto, ymax: auto) = {
+  let spec = (vline: x0, stroke: stroke)
+  if ymin != auto { spec.insert("ymin", ymin) }
+  if ymax != auto { spec.insert("ymax", ymax) }
+  spec
+}
+
+/// Horizontal reference line at y = `y0`.
+///
+/// Example:
+/// ```typst
+/// (hline: 0.0, stroke: (dash: "dashed") + luma(100) + 0.6pt)
+/// ```
+#let hline(y0, stroke: luma(100) + 0.6pt, xmin: auto, xmax: auto) = {
+  let spec = (hline: y0, stroke: stroke)
+  if xmin != auto { spec.insert("xmin", xmin) }
+  if xmax != auto { spec.insert("xmax", xmax) }
+  spec
+}
+
+/// Draw Riemann sum rectangles for `fn` over `domain` with `n` subdivisions.
+///
+/// - method: `"left"` (left endpoint), `"right"` (right endpoint), `"mid"` (midpoint)
+/// - Hatch styles: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"`
+///
+/// Example:
+/// ```typst
+/// #plot(...,
+///   // lower Riemann sum (right endpoint, decreasing function)
+///   riemann-sum(x => 1/x, domain: (1,4), n: 3, method: "right",
+///               color: luma(220), stroke: luma(80) + 0.6pt),
+///   (fn: x => 1/x, stroke: blue + 1.2pt),
+/// )
+/// ```
+#let riemann-sum(
+  fn,
+  domain: auto,
+  n: 4,
+  method: "right",
+  baseline: 0.0,
+  color: luma(220),
+  stroke: luma(80) + 0.6pt,
+  hatch: none,
+  hatch-spacing: 5pt,
+  hatch-stroke: luma(80) + 0.5pt,
+) = {
+  let spec = (
+    riemann: fn, n: n, method: method, baseline: baseline,
+    color: color, stroke: stroke,
+    hatch: hatch, hatch-spacing: hatch-spacing, hatch-stroke: hatch-stroke,
   )
   if domain != auto { spec.insert("domain", domain) }
   spec
