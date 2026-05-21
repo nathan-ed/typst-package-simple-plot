@@ -39,7 +39,7 @@ Click on an image to see the source code.
 ## Quick Start
 
 ```typst
-#import "@local/simple-plot:0.6.0": plot
+#import "@local/simple-plot:0.7.0": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -56,7 +56,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Plotting Functions
 
 ```typst
-#import "@local/simple-plot:0.6.0": plot
+#import "@local/simple-plot:0.7.0": plot
 
 // Single function
 #plot(
@@ -78,7 +78,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Scatter Plots
 
 ```typst
-#import "@local/simple-plot:0.6.0": plot, scatter
+#import "@local/simple-plot:0.7.0": plot, scatter
 
 #plot(
   xmin: 0, xmax: 10,
@@ -95,7 +95,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Line Plots with Markers
 
 ```typst
-#import "@local/simple-plot:0.6.0": plot, line-plot
+#import "@local/simple-plot:0.7.0": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -216,7 +216,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Riemann Sums
 
 ```typst
-#import "@local/simple-plot:0.6.0": plot, riemann-sum
+#import "@local/simple-plot:0.7.0": plot, riemann-sum
 
 #plot(
   xmin: 0, xmax: 3, ymin: 0, ymax: 5,
@@ -265,7 +265,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Volume of Revolution
 
 ```typst
-#import "@local/simple-plot:0.6.0": volume-of-revolution
+#import "@local/simple-plot:0.7.0": volume-of-revolution
 
 #volume-of-revolution(
   x => calc.sqrt(x),
@@ -346,7 +346,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Setting Global Defaults
 
 ```typst
-#import "@local/simple-plot:0.6.0": set-plot-defaults, reset-plot-defaults
+#import "@local/simple-plot:0.7.0": set-plot-defaults, reset-plot-defaults
 
 #set-plot-defaults(width: 6, height: 4, show-grid: "major")
 
@@ -378,6 +378,11 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [0.7.0] - 2026-05-21
+
+#### Fixed
+- Riemann sum xi-label x-shift on y-axis increased from 0.18 to 0.35 to prevent overlap with axis line
 
 ### [0.6.0] - 2026-05-21
 

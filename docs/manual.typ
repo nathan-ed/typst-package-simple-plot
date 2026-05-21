@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.6.0": plot, plot-fn, scatter, line-plot, func-plot, riemann-sum, volume-of-revolution, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.7.0": plot, plot-fn, scatter, line-plot, func-plot, riemann-sum, volume-of-revolution, set-plot-defaults, reset-plot-defaults
 
 // =============================================================================
 // DOCUMENT SETUP
@@ -89,7 +89,7 @@
   #v(1cm)
   #text(size: 11pt)[
     A lightweight library for creating elegant mathematical plots\
-    Version 0.6.0\
+    Version 0.7.0\
     Nathan Scheinmann
   ]
 ]
@@ -132,7 +132,7 @@
 Import the package in your Typst document:
 
 ```typst
-#import "@preview/simple-plot:0.6.0": plot
+#import "@preview/simple-plot:0.7.0": plot
 ```
 
 == Quick Start

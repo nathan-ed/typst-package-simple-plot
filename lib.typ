@@ -1134,8 +1134,8 @@
             } else {
               xi-lbl
             }
-            // Shift right when xi label lands on the y-axis to avoid overlap with axis line
-            let x-shift = if calc.abs(x - y-axis-x) < 0.001 { 0.18 } else { 0.0 }
+            // Always shift right when xi label lands on the y-axis to avoid overlap
+            let x-shift = if calc.abs(x - y-axis-x) < 0.001 { 0.35 } else { 0.0 }
             content((cx + x-shift, cy - 0.20), lbl, anchor: "north")
           }
         }
