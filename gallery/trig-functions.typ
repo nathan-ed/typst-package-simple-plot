@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.3.0": plot
+#import "@preview/simple-plot:0.6.0": plot
 
 #set page(width: auto, height: auto, margin: 0.5cm)
 

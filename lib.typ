@@ -65,7 +65,7 @@
   ),
   axis: (
     stroke: black + 0.8pt,
-    arrow: "stealth",
+    arrow: (symbol: "stealth", fill: black, scale: 0.55),
   ),
   grid: (
     // Elegant thin grid lines inspired by tkz-fct
@@ -345,6 +345,7 @@
   tick-label-size: auto,
   axis-label-size: auto,
   style: none,
+  series: none,
   ..functions,
 ) = context {
   let defaults = _plot-defaults.get()
@@ -364,14 +365,14 @@
   let scale = resolve(scale, "scale", 1)
   let width = width * scale
   let height = height * scale
-  let xlabel = resolve(xlabel, "xlabel", none)
-  let ylabel = resolve(ylabel, "ylabel", none)
+  let xlabel = resolve(xlabel, "xlabel", $x$)
+  let ylabel = resolve(ylabel, "ylabel", $y$)
   let xlabel-pos = resolve(xlabel-pos, "xlabel-pos", "end")
   let ylabel-pos = resolve(ylabel-pos, "ylabel-pos", "end")
-  let xlabel-anchor = resolve(xlabel-anchor, "xlabel-anchor", "west")
-  let ylabel-anchor = resolve(ylabel-anchor, "ylabel-anchor", "south")
-  let xlabel-offset = resolve(xlabel-offset, "xlabel-offset", (0.3, 0))
-  let ylabel-offset = resolve(ylabel-offset, "ylabel-offset", (0, 0.3))
+  let xlabel-anchor = resolve(xlabel-anchor, "xlabel-anchor", "north")
+  let ylabel-anchor = resolve(ylabel-anchor, "ylabel-anchor", "east")
+  let xlabel-offset = resolve(xlabel-offset, "xlabel-offset", (0.0, -0.05))
+  let ylabel-offset = resolve(ylabel-offset, "ylabel-offset", (-0.05, 0.0))
   let xtick = resolve(xtick, "xtick", auto)
   let ytick = resolve(ytick, "ytick", auto)
   let xtick-step = resolve(xtick-step, "xtick-step", auto)
@@ -473,7 +474,7 @@
     }
 
     set-style(
-      mark: (fill: black, scale: 1.5),
+      mark: (fill: black),
       stroke: (cap: "round", join: "round"),
       content: (padding: 2pt),
     )
@@ -744,7 +745,9 @@
         let label = if xtick-labels == auto { format-number(x) }
                     else if i < xtick-labels.len() { xtick-labels.at(i) }
                     else { "" }
-        if label != "" and label != "0" {
+        let render-label = if type(label) == content { true }
+                           else { label != "" and label != "0" }
+        if render-label {
           content((cx, cy - tick-len - label-offset),
                   text(size: s.ticks.label-size)[#label], anchor: "north")
         }
@@ -771,7 +774,9 @@
         let label = if ytick-labels == auto { format-number(y) }
                     else if i < ytick-labels.len() { ytick-labels.at(i) }
                     else { "" }
-        if label != "" and label != "0" {
+        let render-label = if type(label) == content { true }
+                           else { label != "" and label != "0" }
+        if render-label {
           content((cx - tick-len - label-offset, cy),
                   text(size: s.ticks.label-size)[#label], anchor: "east")
         }
@@ -788,9 +793,9 @@
     // Axis labels - positioned at the extended arrow tips
     if xlabel != none {
       let (lx, ly) = if xlabel-pos == "end" {
-        // Position at extended arrow tip
+        // Position just before the extended arrow tip so labels stay inside tight panels.
         let (base-x, base-y) = to-canvas(xmax, x-axis-y)
-        (base-x + x-extend.at(1) * x-scale, base-y)
+        (base-x + x-extend.at(1) * x-scale - 0.18, base-y)
       } else if xlabel-pos == "center" { to-canvas((xmin + xmax) / 2, x-axis-y) }
         else if type(xlabel-pos) == array { to-canvas(xlabel-pos.at(0), xlabel-pos.at(1)) }
         else { to-canvas(xmax, x-axis-y) }
@@ -800,9 +805,9 @@
 
     if ylabel != none {
       let (lx, ly) = if ylabel-pos == "end" {
-        // Position at extended arrow tip
+        // Position just below the extended arrow tip so labels stay inside tight panels.
         let (base-x, base-y) = to-canvas(y-axis-x, ymax)
-        (base-x, base-y + y-extend.at(1) * y-scale)
+        (base-x, base-y + y-extend.at(1) * y-scale - 0.18)
       } else if ylabel-pos == "center" { to-canvas(y-axis-x, (ymin + ymax) / 2) }
         else if type(ylabel-pos) == array { to-canvas(ylabel-pos.at(0), ylabel-pos.at(1)) }
         else { to-canvas(y-axis-x, ymax) }
@@ -829,8 +834,11 @@
     let clip-x2 = grid-x-end
     let clip-y2 = grid-y-end
 
+    // Merge series: array with positional functions
+    let all-funcs = if series != none { series + functions.pos() } else { functions.pos() }
+
     // Plot functions and data (with manual line clipping)
-    for func-spec in functions.pos() {
+    for func-spec in all-funcs {
       let fn = func-spec.at("fn", default: none)
       let data-points = func-spec.at("points", default: none)
       let stroke-style = func-spec.at("stroke", default: s.plot.stroke)
@@ -882,12 +890,18 @@
         }
 
         if label != none {
-          let label-pos = func-spec.at("label-pos", default: 0.8)
+          let label-pos = func-spec.at("label-pos", default: 1.0)
           let label-side = func-spec.at("label-side", default: none)
-          let label-anchor = if label-side != none { side-to-anchor(label-side) } else { func-spec.at("label-anchor", default: "south-west") }
-          // Use axis range unless a domain is explicitly provided.
-          let label-domain-min = if domain == none { x-clip-min } else { domain-min }
-          let label-domain-max = if domain == none { x-clip-max } else { domain-max }
+          // Clip label position to the data range (xmin/xmax).
+          // Do NOT clip to x-clip-max — that includes axis arrow overshoot and places labels outside the canvas.
+          // "south-west" text extends right into the axis extension zone, which is natural for end-of-curve labels.
+          let label-domain-min = if domain == none { xmin } else { calc.max(float(domain-min), xmin) }
+          let label-domain-max = if domain == none { xmax } else { calc.min(float(domain-max), xmax) }
+          let label-anchor = if label-side != none {
+            side-to-anchor(label-side)
+          } else {
+            func-spec.at("label-anchor", default: "south-west")
+          }
           let lx = label-domain-min + (label-domain-max - label-domain-min) * label-pos
           let ly = fn(lx)
           if ly != none and not float(ly).is-nan() and ly >= y-clip-min and ly <= y-clip-max {
@@ -1027,16 +1041,48 @@
         let hatch-sp    = func-spec.at("hatch-spacing", default: 5pt)
         let hatch-stk   = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
 
+        let r-samples      = func-spec.at("samples", default: 20)
+        let r-show-points  = func-spec.at("show-points", default: false)
+        let r-point-color  = func-spec.at("point-color", default: rgb("#c94a00"))
+        let r-point-size   = func-spec.at("point-size", default: 0.07)
+        let r-point-label  = func-spec.at("point-label", default: none)
+        let r-point-lpos   = func-spec.at("point-label-pos", default: auto)
+        let r-show-dx      = func-spec.at("show-dx", default: false)
+        let r-dx-rect      = func-spec.at("dx-rect", default: auto)
+        let r-dx-label     = func-spec.at("dx-label", default: $Delta x$)
+        let r-show-xi        = func-spec.at("show-xi", default: false)
+        let r-xi-labels      = func-spec.at("xi-labels", default: auto)
+        let r-xi-show-values = func-spec.at("xi-show-values", default: false)
+
         let (d1, d2) = r-domain
         let w = (d2 - d1) / r-n
+
+        // Collect canvas evaluation points for dots/arrows (left/right/mid only)
+        let eval-pts = ()
 
         for i in range(r-n) {
           let xl = d1 + i * w
           let xr = d1 + (i + 1) * w
-          let xeval = if r-method == "left"  { xl }
-                      else if r-method == "right" { xr }
-                      else { (xl + xr) / 2.0 }
-          let y = r-fn(xeval)
+          let y = if r-method == "lower" or r-method == "upper" {
+            let sub-ys = ()
+            for j in range(r-samples + 1) {
+              let x = xl + j * (xr - xl) / r-samples
+              let v = r-fn(x)
+              if v != none and not float(v).is-nan() { sub-ys.push(float(v)) }
+            }
+            if sub-ys.len() == 0 { none }
+            else if r-method == "lower" { calc.min(..sub-ys) }
+            else { calc.max(..sub-ys) }
+          } else {
+            let xeval = if r-method == "left"  { xl }
+                        else if r-method == "right" { xr }
+                        else { (xl + xr) / 2.0 }
+            let ev = r-fn(xeval)
+            if ev != none and not float(ev).is-nan() {
+              eval-pts.push(to-canvas(xeval, float(ev)))
+            }
+            ev
+          }
           if y != none and not float(y).is-nan() {
             let yv = float(y)
             let (cxl, cybot) = to-canvas(xl, r-base)
@@ -1045,6 +1091,85 @@
               make-hatch-pattern(hatch-style, hatch-sp, hatch-stk)
             } else { fill-color }
             rect((cxl, cybot), (cxr, cytop), fill: paint, stroke: rect-stroke)
+          }
+        }
+
+        // ── Δx bracket ──────────────────────────────────────────────────────
+        let dx-di = if r-dx-rect == auto { calc.floor(r-n / 2) } else { r-dx-rect }
+        if r-show-dx {
+          let xl = d1 + dx-di * w
+          let xr = d1 + (dx-di + 1) * w
+          let (cxl, cy-base) = to-canvas(xl, r-base)
+          let (cxr, _)       = to-canvas(xr, r-base)
+          let tick-drop = 0.10
+          let arrow-y   = cy-base - 0.18
+          line((cxl, cy-base - 0.02), (cxl, cy-base - tick-drop), stroke: black + 0.5pt)
+          line((cxr, cy-base - 0.02), (cxr, cy-base - tick-drop), stroke: black + 0.5pt)
+          line((cxl, arrow-y), (cxr, arrow-y),
+               mark: (start: (symbol: "stealth", fill: black, scale: 0.35),
+                      end:   (symbol: "stealth", fill: black, scale: 0.35)),
+               stroke: black + 0.5pt)
+          content(((cxl + cxr) / 2, arrow-y - 0.06), r-dx-label, anchor: "north")
+        }
+
+        // ── x_i labels ──────────────────────────────────────────────────────
+        if r-show-xi {
+          for i in range(r-n + 1) {
+            // Skip the two indices that straddle the Δx bracket to avoid overlap
+            if r-show-dx and (i == dx-di or i == dx-di + 1) { continue }
+            let x = d1 + i * w
+            let (cx, cy) = to-canvas(x, r-base)
+            let xi-lbl = if r-xi-labels != auto and i < r-xi-labels.len() {
+              r-xi-labels.at(i)
+            } else {
+              math.attach($x$, b: [#i])
+            }
+            let lbl = if r-xi-show-values {
+              // Stack: numeric value on top, xi subscript below
+              let sz = s.ticks.label-size
+              stack(dir: ttb, spacing: 1pt,
+                text(size: sz)[$#format-number(x)$],
+                text(size: sz)[#xi-lbl],
+              )
+            } else {
+              xi-lbl
+            }
+            // Shift right when xi label lands on the y-axis to avoid overlap with axis line
+            let x-shift = if calc.abs(x - y-axis-x) < 0.001 { 0.18 } else { 0.0 }
+            content((cx + x-shift, cy - 0.20), lbl, anchor: "north")
+          }
+        }
+
+        // ── Endpoint dots + label with arrows ───────────────────────────────
+        if r-show-points and eval-pts.len() > 0 {
+          let lbl-text = if r-point-label == auto {
+            if r-method == "left"  { [Left endpoints] }
+            else if r-method == "right" { [Right endpoints] }
+            else if r-method == "mid"   { [Midpoints] }
+            else { none }
+          } else { r-point-label }
+
+          if lbl-text != none {
+            let (lx, ly) = if r-point-lpos == auto {
+              // Place inside the canvas: upper-left for right method, upper-right for left/mid
+              let frac = if r-method == "right" { 0.25 } else { 0.75 }
+              let lx-data = d1 + frac * (d2 - d1)
+              let ly-data = ymax - 0.12 * (ymax - ymin)
+              to-canvas(lx-data, ly-data)
+            } else {
+              to-canvas(r-point-lpos.at(0), r-point-lpos.at(1))
+            }
+            // Arrows first so dots render on top
+            for (px, py) in eval-pts {
+              line((lx, ly), (px, py),
+                   mark: (end: (symbol: "stealth", fill: black, scale: 0.35)),
+                   stroke: black + 0.5pt)
+            }
+            content((lx, ly), lbl-text, anchor: "center")
+          }
+          // Dots on top
+          for (px, py) in eval-pts {
+            circle((px, py), radius: r-point-size, fill: r-point-color, stroke: none)
           }
         }
 
@@ -1067,6 +1192,66 @@
         let (cx1, cy) = to-canvas(hx1, y0)
         let (cx2, _)  = to-canvas(hx2, y0)
         line((cx1, cy), (cx2, cy), stroke: stroke-style)
+
+      // ── Parametric curve (fn-x(t), fn-y(t)) ─────────────────────────────
+      // Keys: parametric:(fn-x, fn-y), domain:(t1,t2), samples:int, stroke:stroke
+      } else if "parametric" in func-spec {
+        let (par-x, par-y) = func-spec.at("parametric")
+        let par-domain = func-spec.at("domain", default: (0.0, 1.0))
+        let par-samples = func-spec.at("samples", default: 100)
+        let (t1, t2) = par-domain
+        let step = (t2 - t1) / par-samples
+        let all-par-pts = ()
+        for i in range(par-samples + 1) {
+          let t = t1 + i * step
+          let px = par-x(t)
+          let py = par-y(t)
+          if px != none and py != none and not float(px).is-nan() and not float(py).is-nan() {
+            all-par-pts.push(to-canvas(float(px), float(py)))
+          } else {
+            all-par-pts.push(none)
+          }
+        }
+        for j in range(all-par-pts.len() - 1) {
+          let pt1 = all-par-pts.at(j)
+          let pt2 = all-par-pts.at(j + 1)
+          if pt1 != none and pt2 != none {
+            let clipped = clip-segment(pt1, pt2, clip-x1, clip-y1, clip-x2, clip-y2)
+            if clipped != none {
+              let (p1, p2) = clipped
+              line(p1, p2, stroke: stroke-style)
+            }
+          }
+        }
+
+      // ── Fill area enclosed by parametric closed curve ────────────────────
+      // Keys: fill-closed:(fn-x, fn-y), domain:(t1,t2), color:color,
+      //       hatch:style, hatch-spacing:length, hatch-stroke:stroke, samples:int
+      } else if "fill-closed" in func-spec {
+        let (par-x, par-y) = func-spec.at("fill-closed")
+        let par-domain = func-spec.at("domain", default: (0.0, 1.0))
+        let par-samples = func-spec.at("samples", default: 80)
+        let fill-color   = func-spec.at("color", default: luma(220))
+        let hatch-style  = func-spec.at("hatch", default: none)
+        let hatch-sp     = func-spec.at("hatch-spacing", default: 5pt)
+        let hatch-stroke = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
+        let (t1, t2) = par-domain
+        let step = (t2 - t1) / par-samples
+        let par-pts = ()
+        for i in range(par-samples + 1) {
+          let t = t1 + i * step
+          let px = par-x(t)
+          let py = par-y(t)
+          if px != none and py != none and not float(px).is-nan() and not float(py).is-nan() {
+            par-pts.push(to-canvas(float(px), float(py)))
+          }
+        }
+        if par-pts.len() > 2 {
+          let paint = if hatch-style != none {
+            make-hatch-pattern(hatch-style, hatch-sp, hatch-stroke)
+          } else { fill-color }
+          line(..par-pts, close: true, fill: paint, stroke: none)
+        }
       }
 
       if mark-type != "none" and points-to-draw.len() > 0 {
@@ -1285,18 +1470,20 @@
 
 /// Draw Riemann sum rectangles for `fn` over `domain` with `n` subdivisions.
 ///
-/// - method: `"left"` (left endpoint), `"right"` (right endpoint), `"mid"` (midpoint)
+/// - method: `"left"`, `"right"`, `"mid"`, `"lower"` (true infimum), `"upper"` (true supremum)
+/// - samples: sample points per subinterval for `"lower"`/`"upper"` (default 20)
+/// - show-points: draw a dot at each evaluation point (left/right/mid only)
+/// - point-color: fill color of the dots (default dark orange)
+/// - point-size: radius of dots in cm (default 0.07)
+/// - point-label: content label with arrows to dots; `auto` = method-based text, `none` = no label
+/// - point-label-pos: (x,y) in data coords for the label; `auto` = upper-right of dots
+/// - show-dx: draw a Δx dimension bracket under one rectangle
+/// - dx-rect: index of rectangle to annotate (0-based); `auto` = middle rectangle
+/// - dx-label: content for the bracket label (default $Delta x$)
+/// - show-xi: draw x₀, x₁, … labels at subdivision points below the axis
+/// - xi-labels: array of content overrides; `auto` = generate x_i subscripts
+/// - xi-show-values: if true, stack the numeric x value above each xi label
 /// - Hatch styles: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"`
-///
-/// Example:
-/// ```typst
-/// #plot(...,
-///   // lower Riemann sum (right endpoint, decreasing function)
-///   riemann-sum(x => 1/x, domain: (1,4), n: 3, method: "right",
-///               color: luma(220), stroke: luma(80) + 0.6pt),
-///   (fn: x => 1/x, stroke: blue + 1.2pt),
-/// )
-/// ```
 #let riemann-sum(
   fn,
   domain: auto,
@@ -1308,12 +1495,379 @@
   hatch: none,
   hatch-spacing: 5pt,
   hatch-stroke: luma(80) + 0.5pt,
+  samples: 20,
+  show-points: false,
+  point-color: rgb("#c94a00"),
+  point-size: 0.07,
+  point-label: auto,
+  point-label-pos: auto,
+  show-dx: false,
+  dx-rect: auto,
+  dx-label: $Delta x$,
+  show-xi: false,
+  xi-labels: auto,
+  xi-show-values: false,
 ) = {
   let spec = (
     riemann: fn, n: n, method: method, baseline: baseline,
     color: color, stroke: stroke,
     hatch: hatch, hatch-spacing: hatch-spacing, hatch-stroke: hatch-stroke,
+    samples: samples,
+    show-points: show-points, point-color: point-color, point-size: point-size,
+    point-label: point-label, point-label-pos: point-label-pos,
+    show-dx: show-dx, dx-rect: dx-rect, dx-label: dx-label,
+    show-xi: show-xi, xi-labels: xi-labels, xi-show-values: xi-show-values,
   )
   if domain != auto { spec.insert("domain", domain) }
   spec
 }
+
+/// Parametric curve specification: plot the curve (fn-x(t), fn-y(t)) for t in domain.
+///
+/// Example (unit circle):
+/// ```typst
+/// #plot(xmin: -1.5, xmax: 1.5, ymin: -1.5, ymax: 1.5,
+///   parametric(t => calc.cos(t), t => calc.sin(t), domain: (0, 2*calc.pi)),
+/// )
+/// ```
+#let parametric(
+  fn-x,
+  fn-y,
+  domain: (0.0, 1.0),
+  stroke: blue + 1.2pt,
+  samples: 100,
+) = (parametric: (fn-x, fn-y), domain: domain, stroke: stroke, samples: samples)
+
+/// Fill area enclosed by a parametric closed curve (fn-x(t), fn-y(t)).
+///
+/// The curve should be closed: (fn-x(t1), fn-y(t1)) ≈ (fn-x(t2), fn-y(t2)).
+///
+/// Example (filled unit circle):
+/// ```typst
+/// #plot(xmin: -1.5, xmax: 1.5, ymin: -1.5, ymax: 1.5,
+///   fill-closed(t => calc.cos(t), t => calc.sin(t), domain: (0, 2*calc.pi),
+///               color: blue.lighten(70%)),
+/// )
+/// ```
+#let fill-closed(
+  fn-x,
+  fn-y,
+  domain: (0.0, 1.0),
+  color: luma(220),
+  hatch: none,
+  hatch-spacing: 5pt,
+  hatch-stroke: luma(80) + 0.5pt,
+  samples: 80,
+) = (
+  fill-closed: (fn-x, fn-y), domain: domain, color: color,
+  hatch: hatch, hatch-spacing: hatch-spacing, hatch-stroke: hatch-stroke,
+  samples: samples,
+)
+
+// ============================================================================
+// SOLID OF REVOLUTION ILLUSTRATION
+// ============================================================================
+
+/// Draw a 3D-style solid of revolution illustration.
+///
+/// Rotates the region between y = fn(x) and y = axis-y from x=a to x=b.
+/// Renders a perspective view with profile curves, end caps, and disk cross-sections.
+///
+/// - fn: profile function y = f(x) > 0
+/// - domain: (a, b) — interval of revolution
+/// - axis-y: y-value of the horizontal axis of revolution (default: 0, the x-axis)
+/// - n-disks: number of intermediate circular cross-sections to show
+/// - width, height: canvas size in cm
+/// - samples: number of points to sample the profile
+/// - show-axis: draw x-axis through center
+/// - show-y-axis: draw a coordinate y-axis
+/// - show-labels: show a, b, f labels
+/// - profile-stroke: stroke for the top profile curve
+/// - disk-color: fill color for the solid body
+/// - label-a, label-b, label-f: content for axis position labels and function label
+///
+/// Example:
+/// ```typst
+/// #volume-of-revolution(x => calc.sqrt(x + 1), domain: (0, 3), n-disks: 4)
+/// ```
+#let volume-of-revolution(
+  fn,
+  domain: (0.0, 4.0),
+  n-disks: 4,
+  width: 5.0,
+  height: 3.5,
+  samples: 60,
+  show-axis: true,
+  show-y-axis: false,
+  y-axis-x: auto,
+  y-axis-offset: 0.45,
+  y-axis-extend: (0.35, 0.45),
+  axis-y: 0.0,
+  axis-slope: 0.0,   // slope m: revolution axis is y = m*x + axis-y
+  show-yaxis: false,
+  show-radius-marker: false,
+  yaxis-x: auto,
+  show-labels: true,
+  show-back: true,
+  profile-stroke: blue + 1.5pt,
+  disk-color: luma(218),
+  disk-stroke: luma(90) + 0.6pt,
+  axis-stroke: black + 0.7pt,
+  label-a: $a$,
+  label-b: $b$,
+  label-f: $f$,
+  label-y: $y$,
+) = {
+  let (a, b) = domain
+  let m   = float(axis-slope)
+  let b0  = float(axis-y)      // y-intercept of axis: y = m*x + b0
+  let dsq = 1.0 + m * m        // denominator 1 + m²
+
+  // Perpendicular distance from (px, py) to the axis line y = m*px + b0.
+  let perp-r(px, py) = calc.abs(py - m * px - b0) / calc.sqrt(dsq)
+
+  // X-coordinate of the foot of the perpendicular from (px, py) onto the axis.
+  let foot-x(px, py) = (px + m * (py - b0)) / dsq
+
+  // Sample curve to find foot-x range and maximum radius.
+  let n-s = samples
+  let step = (b - a) / n-s
+  let foot-xs = ()
+  let radii   = ()
+  for i in range(n-s + 1) {
+    let x = a + i * step
+    let y = fn(x)
+    if y != none and not float(y).is-nan() {
+      let fy = float(y)
+      let r = perp-r(x, fy)
+      if r > 0.0 {
+        foot-xs.push(foot-x(x, fy))
+        radii.push(r)
+      }
+    }
+  }
+  let fx-min = if foot-xs.len() > 0 { calc.min(..foot-xs) } else { float(a) }
+  let fx-max = if foot-xs.len() > 0 { calc.max(..foot-xs) } else { float(b) }
+  let r-max  = if radii.len()   > 0 { calc.max(..radii)   } else { 1.0 }
+
+  let x-sc = width / (fx-max - fx-min)
+  let y-sc = (height / 2.0) / r-max
+  let ell-r = 0.30
+
+  // Canvas coordinate helpers — both take the original (x, y) point.
+  let cx(px, py) = (foot-x(px, float(py)) - fx-min) * x-sc
+  let cr(px, py) = perp-r(px, float(py)) * y-sc
+
+  let safe-cr(raw, px) = {
+    if raw == none { 0.0 }
+    else {
+      let v = float(raw)
+      if v.is-nan() { 0.0 } else { perp-r(px, v) * y-sc }
+    }
+  }
+
+  cetz.canvas(length: 1cm, {
+    import cetz.draw: *
+
+    let axis-cy = 0.0
+    let disk-steps = 36
+    let dashed-stroke = (paint: luma(160), thickness: 0.45pt, dash: "dashed")
+    let draw-coordinate-y-axis = show-y-axis or show-yaxis
+    let draw-radius-marker = show-radius-marker
+
+    let ellipse-half(ex, radius, side) = {
+      let pts = ()
+      let er = radius * ell-r
+      for j in range(disk-steps + 1) {
+        let t = j / disk-steps
+        let angle = if side == "front" {
+          -90deg + t * 180deg
+        } else if side == "back" {
+          90deg + t * 180deg
+        } else if side == "upper" {
+          0deg + t * 180deg
+        } else if side == "upper-front" {
+          0deg + t * 90deg
+        } else if side == "upper-back" {
+          90deg + t * 90deg
+        } else {
+          180deg + t * 180deg
+        }
+        pts.push((
+          ex + er * calc.cos(angle),
+          axis-cy + radius * calc.sin(angle),
+        ))
+      }
+      pts
+    }
+
+    let ellipse-full(ex, radius) = {
+      let pts = ()
+      let er = radius * ell-r
+      for j in range(disk-steps + 1) {
+        let t = j / disk-steps
+        let angle = -90deg + t * 360deg
+        pts.push((
+          ex + er * calc.cos(angle),
+          axis-cy + radius * calc.sin(angle),
+        ))
+      }
+      pts
+    }
+
+    // Collect profile points.
+    let top-pts = ()
+    let bot-pts = ()
+    for i in range(n-s + 1) {
+      let x = a + i * step
+      let y = fn(x)
+      if y != none and not float(y).is-nan() {
+        let fy = float(y)
+        let r = cr(x, fy)
+        if r > 0.0 {
+          top-pts.push((cx(x, fy), axis-cy + r))
+          bot-pts.push((cx(x, fy), axis-cy - r))
+        }
+      }
+    }
+
+    // Right cap at x=b, drawn first so the closing disk sits behind the body.
+    let yb = fn(b)
+    if yb != none {
+      let fyb = float(yb)
+      let ex = cx(b, fyb)
+      let radius = safe-cr(yb, b)
+      if radius > 0.02 {
+        if show-back {
+          line(..ellipse-full(ex, radius), close: true, fill: disk-color, stroke: none)
+          line(..ellipse-half(ex, radius, "back"), stroke: (paint: luma(140), thickness: 0.4pt, dash: "dashed"))
+        } else {
+          line(..ellipse-half(ex, radius, "upper"), close: true, fill: disk-color, stroke: none)
+          line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
+        }
+      }
+    }
+
+    // Filled solid body
+    if top-pts.len() > 0 {
+      if show-back {
+        line(..(top-pts + bot-pts.rev()), close: true, fill: disk-color, stroke: none)
+      } else {
+        let x-left  = top-pts.first().at(0)
+        let x-right = top-pts.last().at(0)
+        line(..(top-pts + ((x-right, axis-cy), (x-left, axis-cy))), close: true,
+             fill: disk-color, stroke: none)
+      }
+    }
+
+    // Intermediate disk cross-sections
+    for i in range(1, n-disks + 1) {
+      let xd = a + i * (b - a) / (n-disks + 1)
+      let yd = fn(xd)
+      if yd != none and not float(yd).is-nan() {
+        let fyd = float(yd)
+        let ex = cx(xd, fyd)
+        let radius = cr(xd, fyd)
+        if radius > 0.02 {
+          if show-back {
+            line(..ellipse-half(ex, radius, "back"), stroke: dashed-stroke)
+            line(..ellipse-half(ex, radius, "front"), stroke: disk-stroke)
+          } else {
+            line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
+            line(..ellipse-half(ex, radius, "upper-front"), stroke: disk-stroke)
+          }
+        }
+      }
+    }
+
+    // Bottom profile (dashed)
+    if show-back and bot-pts.len() > 1 {
+      line(..bot-pts, stroke: dashed-stroke)
+    }
+
+    // Left cap at x=a
+    let ya = fn(a)
+    if ya != none {
+      let fya = float(ya)
+      let ex = cx(a, fya)
+      let radius = safe-cr(ya, a)
+      if radius > 0.02 {
+        if show-back {
+          line(..ellipse-full(ex, radius), close: true, fill: disk-color, stroke: none)
+          line(..ellipse-half(ex, radius, "back"), stroke: (paint: luma(170), thickness: 0.4pt, dash: "dashed"))
+          line(..ellipse-half(ex, radius, "front"), stroke: (paint: luma(100), thickness: 0.5pt))
+        } else {
+          line(..ellipse-half(ex, radius, "upper"), close: true, fill: disk-color, stroke: none)
+          line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
+          line(..ellipse-half(ex, radius, "upper-front"), stroke: (paint: luma(100), thickness: 0.5pt))
+        }
+      }
+    }
+
+    // Top profile
+    if top-pts.len() > 1 {
+      line(..top-pts, stroke: profile-stroke)
+    }
+
+    let coord-y-axis-x = if draw-coordinate-y-axis {
+      if y-axis-x == auto {
+        -float(y-axis-offset)
+      } else {
+        let xv = y-axis-x
+        let yv-raw = fn(xv)
+        if yv-raw != none { cx(xv, float(yv-raw)) } else { 0.0 }
+      }
+    } else { none }
+
+    // Coordinate y-axis (optional)
+    if draw-coordinate-y-axis {
+      let (ext-bot, ext-top) = if type(y-axis-extend) == array { y-axis-extend } else { (y-axis-extend, y-axis-extend) }
+      let y-bottom = -height / 2.0 - ext-bot
+      let y-top = height / 2.0 + ext-top
+      line((coord-y-axis-x, y-bottom), (coord-y-axis-x, axis-cy + y-top), stroke: axis-stroke,
+           mark: (end: (symbol: "stealth", fill: black, scale: 0.55)))
+      content((coord-y-axis-x - 0.05, axis-cy + y-top), label-y, anchor: "east")
+    }
+
+    // Radius marker (optional)
+    if draw-radius-marker {
+      let xv = if yaxis-x == auto { a } else { yaxis-x }
+      let yv-raw = fn(xv)
+      let yv = safe-cr(yv-raw, xv)
+      if yv > 0.05 {
+        let yax-x = if yv-raw != none { cx(xv, float(yv-raw)) } else { 0.0 }
+        line((yax-x, axis-cy), (yax-x, axis-cy + yv + 0.35), stroke: axis-stroke,
+             mark: (end: (symbol: "stealth", fill: black, scale: 0.55)))
+        content((yax-x - 0.05, axis-cy + yv + 0.35), label-y, anchor: "east")
+      }
+    }
+
+    // Revolution axis arrow
+    if show-axis {
+      let axis-start-x = if coord-y-axis-x != none { coord-y-axis-x } else { -0.25 }
+      line((axis-start-x, axis-cy), (width + 0.4, axis-cy), stroke: axis-stroke,
+           mark: (end: (symbol: "stealth", fill: black, scale: 0.55)))
+      content((width + 0.45, axis-cy - 0.03), $x$, anchor: "north-west")
+    }
+
+    // Tick marks and labels at domain endpoints
+    if show-labels {
+      let tick = 0.15
+      // Canvas positions of the domain endpoints' foot projections
+      let cx-a = if ya != none { cx(a, float(ya)) } else { 0.0 }
+      let cx-b = if yb != none { cx(b, float(yb)) } else { width }
+      line((cx-a, axis-cy + tick), (cx-a, axis-cy - tick), stroke: axis-stroke)
+      line((cx-b, axis-cy + tick), (cx-b, axis-cy - tick), stroke: axis-stroke)
+      content((cx-a, axis-cy - (tick + 0.08)), label-a, anchor: "north")
+      content((cx-b, axis-cy - (tick + 0.08)), label-b, anchor: "north")
+      let lx = a + (b - a) * 0.18
+      let ly = fn(lx)
+      if ly != none {
+        let fly = float(ly)
+        content((cx(lx, fly), axis-cy + safe-cr(ly, lx) + 0.22), label-f, anchor: "south")
+      }
+    }
+  })
+}
+
+#let solid-of-revolution = volume-of-revolution
