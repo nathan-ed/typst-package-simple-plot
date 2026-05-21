@@ -18,8 +18,10 @@ Click on an image to see the source code.
 | Parabola | Trigonometric Functions | Scatter Plot |
 | [![Exponential](gallery/exponential.png)](gallery/exponential.typ) | [![Data Fit](gallery/data-fit.png)](gallery/data-fit.typ) | [![Markers](gallery/markers.png)](gallery/markers.typ) |
 | Exponential & Logarithmic | Data with Model Fit | Marker Types |
-| [![Extended Axes](gallery/extended-axes.png)](gallery/extended-axes.typ) | [![Area Features](gallery/area-features.pdf)](gallery/area-features.typ) | [![Volume of Revolution](gallery/revolution-1.png)](gallery/revolution.typ) |
+| [![Extended Axes](gallery/extended-axes.png)](gallery/extended-axes.typ) | [![Area Features](gallery/area-features-1.png)](gallery/area-features.typ) | [![Volume of Revolution](gallery/revolution-1.png)](gallery/revolution.typ) |
 | Extended Axes | Area Fills & Riemann Sums | Volume of Revolution |
+| [![Riemann Sum Features](gallery/riemann-features-1.png)](gallery/riemann-features.typ) | | |
+| Riemann Sum Features | | |
 
 ## Features
 
@@ -39,7 +41,7 @@ Click on an image to see the source code.
 ## Quick Start
 
 ```typst
-#import "@local/simple-plot:0.7.0": plot
+#import "@local/simple-plot:0.8.0": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -56,7 +58,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Plotting Functions
 
 ```typst
-#import "@local/simple-plot:0.7.0": plot
+#import "@local/simple-plot:0.8.0": plot
 
 // Single function
 #plot(
@@ -78,7 +80,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Scatter Plots
 
 ```typst
-#import "@local/simple-plot:0.7.0": plot, scatter
+#import "@local/simple-plot:0.8.0": plot, scatter
 
 #plot(
   xmin: 0, xmax: 10,
@@ -95,7 +97,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Line Plots with Markers
 
 ```typst
-#import "@local/simple-plot:0.7.0": plot, line-plot
+#import "@local/simple-plot:0.8.0": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -216,7 +218,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Riemann Sums
 
 ```typst
-#import "@local/simple-plot:0.7.0": plot, riemann-sum
+#import "@local/simple-plot:0.8.0": plot, riemann-sum
 
 #plot(
   xmin: 0, xmax: 3, ymin: 0, ymax: 5,
@@ -246,9 +248,11 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 | `color` | color | `luma(220)` | Rectangle fill |
 | `stroke` | stroke | `luma(80) + 0.6pt` | Rectangle border |
 | `hatch` | str/none | none | Hatch pattern: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"` |
+| `hatch-spacing` | length | `5pt` | Spacing between hatch lines |
+| `hatch-stroke` | stroke | `luma(80) + 0.5pt` | Stroke for hatch lines |
 | `samples` | int | 20 | Samples per subinterval for `"lower"`/`"upper"` |
 | `show-points` | bool | false | Draw dot at each evaluation point |
-| `point-color` | color | dark orange | Dot fill color |
+| `point-color` | color | `rgb("#c94a00")` | Dot fill color |
 | `point-size` | float | 0.07 | Dot radius in cm |
 | `point-label` | content/auto/none | `auto` | Label with arrows to dots; `auto` = method name |
 | `point-label-pos` | array/auto | `auto` | `(x, y)` in data coords; `auto` = upper-right of dots |
@@ -257,6 +261,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 | `dx-label` | content | `$Delta x$` | Bracket label |
 | `show-xi` | bool | false | Draw $x_0, x_1, \ldots, x_n$ at subdivision points |
 | `xi-labels` | array/auto | `auto` | Custom labels array; `auto` = subscripted $x_i$ |
+| `xi-show-values` | bool | false | Show numeric x-values instead of $x_i$ notation |
 
 **Methods:**
 - `"left"` / `"right"` / `"mid"` — evaluation at left endpoint, right endpoint, or midpoint
@@ -265,7 +270,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Volume of Revolution
 
 ```typst
-#import "@local/simple-plot:0.7.0": volume-of-revolution
+#import "@local/simple-plot:0.8.0": volume-of-revolution
 
 #volume-of-revolution(
   x => calc.sqrt(x),
@@ -292,10 +297,13 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 | `width`, `height` | float | 5, 3.5 | Canvas size in cm |
 | `samples` | int | 60 | Profile sampling points |
 | `axis-y` | float | 0 | Y-value of revolution axis (default: x-axis) |
-| `axis-slope` | float | 0 | Slope $m$ of revolution axis: $y = mx + \text{axis-y}$ |
+| `axis-slope` | float | 0 | Slope $m$ of revolution axis: $y = mx + \text{axis\_y}$ |
 | `show-axis` | bool | true | Draw the revolution axis arrow |
-| `show-yaxis` | bool | false | Draw a coordinate y-axis at the left cap |
-| `yaxis-x` | auto/float | `auto` | X position for the y-axis; `auto` = left domain edge |
+| `show-yaxis` | bool | false | Draw a coordinate y-axis (`show-y-axis` is the canonical spelling) |
+| `y-axis-x` / `yaxis-x` | auto/float | `auto` | X position for the y-axis; `auto` = left of volume |
+| `y-axis-offset` | float | 0.45 | Gap between the y-axis and the volume when `y-axis-x: auto` |
+| `y-axis-extend` | array | `(0.35, 0.45)` | Y-axis padding `(below, above)` the volume |
+| `show-radius-marker` | bool | false | Draw a vertical radius dimension marker at `yaxis-x` |
 | `show-back` | bool | true | Draw the back face and bottom profile |
 | `show-labels` | bool | true | Show $a$, $b$, $f$ labels |
 | `profile-stroke` | stroke | `blue + 1.5pt` | Top profile curve |
@@ -346,7 +354,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Setting Global Defaults
 
 ```typst
-#import "@local/simple-plot:0.7.0": set-plot-defaults, reset-plot-defaults
+#import "@local/simple-plot:0.8.0": set-plot-defaults, reset-plot-defaults
 
 #set-plot-defaults(width: 6, height: 4, show-grid: "major")
 
@@ -378,6 +386,13 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [0.8.0] - 2026-05-21
+
+#### Added
+- **`riemann-sum`: complete feature documentation** — full API table with all 23 parameters: `method` (`"left"`, `"right"`, `"mid"`, `"lower"`, `"upper"`), hatch controls (`hatch`, `hatch-spacing`, `hatch-stroke`), annotation flags (`show-points`, `point-color`, `point-size`, `point-label`, `point-label-pos`, `show-dx`, `dx-rect`, `dx-label`, `show-xi`, `xi-labels`, `xi-show-values`), and `samples`
+- **`volume-of-revolution`: complete feature documentation** — full API table with all parameters including `axis-y`, `axis-slope`, `show-y-axis`, `yaxis-x`, `y-axis-offset`, `y-axis-extend`, `show-radius-marker`, `show-back`, `show-labels`, label params; `solid-of-revolution` alias documented
+- **Gallery: `riemann-features.typ`** — 8-demo showcase of all Riemann sum features side by side
 
 ### [0.7.0] - 2026-05-21
 

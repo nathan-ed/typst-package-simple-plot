@@ -1,7 +1,7 @@
 //
 // revolution.typ — Gallery for volume-of-revolution feature in simple-plot
 //
-#import "@preview/simple-plot:0.7.0": volume-of-revolution
+#import "@preview/simple-plot:0.8.0": volume-of-revolution
 
 #set page(margin: 1.5cm, width: 21cm)
 #set text(font: "New Computer Modern", size: 10pt)
