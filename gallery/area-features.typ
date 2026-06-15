@@ -1,7 +1,7 @@
 //
 // area-features.typ — Test / gallery for all new area-fill features in simple-plot 0.4.0
 //
-#import "@preview/simple-plot:0.8.0": plot, fill-area, area-between, note, vline, hline, riemann-sum
+#import "@preview/simple-plot:0.9.0": plot, fill-area, area-between, note, vline, hline, riemann-sum
 
 #set page(margin: 1.5cm, width: 21cm)
 #set text(font: "New Computer Modern", size: 10pt)

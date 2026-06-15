@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.8.0": plot, plot-fn, scatter, line-plot, func-plot, riemann-sum, fill-area, area-between, volume-of-revolution, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.9.0": plot, plot-fn, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, set-plot-defaults, reset-plot-defaults
 
 // =============================================================================
 // DOCUMENT SETUP
@@ -89,7 +89,7 @@
   #v(1cm)
   #text(size: 11pt)[
     A lightweight library for creating elegant mathematical plots\
-    Version 0.7.0\
+    Version 0.9.0\
     Nathan Scheinmann
   ]
 ]
@@ -115,7 +115,9 @@
 == Features
 
 - Plot mathematical functions with automatic sampling
+- Parametric curves (ellipses, hyperbolas, closed shapes)
 - Scatter plots and line plots with customizable markers
+- Fill areas under curves or between two curves (solid or hatched)
 - Clean integer-based tick system by default
 - Major and minor grid with elegant styling
 - Gap-based grid line breaks around tick labels (grid-label-break)
@@ -123,16 +125,18 @@
 - Flexible axis positioning (origin, bottom/left, custom)
 - Multiple label display options (unit-label-only, label-step)
 - Function labels with flexible positioning
-- Riemann sum rectangles with left, right, and midpoint methods
+- Text annotations and reference lines (vline, hline)
+- Riemann sum rectangles with left, right, midpoint, lower, and upper methods
 - Volume of revolution diagrams with end caps, disks, and tilted axes
 - Clipping for clean rendering at boundaries
+- Global defaults and style overrides
 
 == Installation
 
 Import the package in your Typst document:
 
 ```typst
-#import "@preview/simple-plot:0.8.0": plot
+#import "@preview/simple-plot:0.9.0": plot
 ```
 
 == Quick Start
@@ -230,6 +234,13 @@ Functions are defined using Typst's `calc` module. Here are the most common math
   - ✗ `x => x * x / 2` _(may cause errors)_
 
   This is because Typst's type system requires consistent float arithmetic.
+
+  To draw a function with a hole or discontinuity, return `none` from the function at that point — the line will break without connecting across the gap:
+
+  ```typst
+  // Draws 1/x with a break at x=0
+  (fn: x => if calc.abs(x) < 0.01 { none } else { 1.0 / x }, stroke: blue + 1.5pt)
+  ```
 ]
 
 #pagebreak()
@@ -373,9 +384,11 @@ Control grid display with `show-grid`:
 )
   ```],
   [
-    #plot(width: 3.5, height: 3, xmin: -2, xmax: 2, ymin: -2, ymax: 2, show-grid: "major")
-    #v(0.3em)
-    #plot(width: 3.5, height: 3, xmin: -2, xmax: 2, ymin: -2, ymax: 2, show-grid: "both")
+    #plot(width: 3.5, height: 2.5, xmin: -2, xmax: 2, ymin: -2, ymax: 2, show-grid: "major")
+    #v(0.2em)
+    #plot(width: 3.5, height: 2.5, xmin: -2, xmax: 2, ymin: -2, ymax: 2, show-grid: "minor")
+    #v(0.2em)
+    #plot(width: 3.5, height: 2.5, xmin: -2, xmax: 2, ymin: -2, ymax: 2, show-grid: "both")
   ]
 )
 
@@ -708,11 +721,11 @@ The following markers are available:
   [*Marker*], [*Description*],
   [`"o"`], [Circle (outline)],
   [`"*"`], [Circle (filled)],
-  [`"square"` / `"s"`], [Square (outline)],
+  [`"square"`], [Square (outline)],
   [`"square*"`], [Square (filled)],
-  [`"triangle"` / `"^"`], [Triangle up (outline)],
+  [`"triangle"`], [Triangle up (outline)],
   [`"triangle*"`], [Triangle up (filled)],
-  [`"diamond"` / `"d"`], [Diamond (outline)],
+  [`"diamond"`], [Diamond (outline)],
   [`"diamond*"`], [Diamond (filled)],
   [`"star"`], [Star (outline)],
   [`"star*"`], [Star (filled)],
@@ -731,9 +744,9 @@ The following markers are available:
   xmin: 0, xmax: 7, ymin: 0, ymax: 5,
   axis-x-pos: "bottom", axis-y-pos: "left",
   show-grid: "major",
-  (data: ((1, 1), (2, 2), (3, 2.5)), mark: "o", stroke: blue),
-  (data: ((1, 2), (2, 3), (3, 3.5)), mark: "square*", stroke: red),
-  (data: ((1, 3), (2, 4), (3, 4.2)), mark: "triangle", stroke: green),
+  data(((1, 1), (2, 2), (3, 2.5)), mark: "o", mark-stroke: blue),
+  data(((1, 2), (2, 3), (3, 3.5)), mark: "square*", mark-fill: red, mark-stroke: red),
+  data(((1, 3), (2, 4), (3, 4.2)), mark: "triangle", mark-stroke: green),
 )
   ```],
   [
@@ -742,9 +755,9 @@ The following markers are available:
       xmin: 0, xmax: 7, ymin: 0, ymax: 5,
       axis-x-pos: "bottom", axis-y-pos: "left",
       show-grid: "major",
-      (data: ((1, 1), (2, 2), (3, 2.5)), mark: "o", mark-size: 0.12, stroke: blue),
-      (data: ((1, 2), (2, 3), (3, 3.5)), mark: "square*", mark-size: 0.12, stroke: red),
-      (data: ((1, 3), (2, 4), (3, 4.2)), mark: "triangle", mark-size: 0.12, stroke: green),
+      data(((1, 1), (2, 2), (3, 2.5)), mark: "o", mark-size: 0.12, mark-stroke: blue),
+      data(((1, 2), (2, 3), (3, 3.5)), mark: "square*", mark-size: 0.12, mark-fill: red, mark-stroke: red),
+      data(((1, 3), (2, 4), (3, 4.2)), mark: "triangle", mark-size: 0.12, mark-stroke: green),
     )
   ]
 )
@@ -778,44 +791,319 @@ Plot a single function with automatic y-scaling:
   ]
 )
 
-== `scatter` - Scatter Plot Helper
+*Parameters:*
 
-Create scatter plot specifications:
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`fn`], [function], [—], [Function to plot],
+  [`domain`], [array], [(-5, 5)], [X domain],
+  [`ymin` / `ymax`], [float/auto], [auto], [Y bounds; `auto` = computed from samples],
+  [`stroke`], [stroke], [`blue + 1.2pt`], [Line style],
+  [`..args`], [any], [—], [Forwarded to `plot()`],
+)
+
+== `scatter` / `data` - Point Sets
+
+`scatter` and `data` are identical functions. Use them to create isolated point specifications. Set `connect: true` to join points with a line.
 
 ```typst
-#let my-data = scatter(
-  ((1, 2), (2, 4), (3, 5)),
-  mark: "o",
-  stroke: blue,
+#plot(
+  xmin: 0, xmax: 4, ymin: 0, ymax: 6,
+  scatter(((1, 2), (2, 4), (3, 5)), mark: "o", mark-fill: blue),
+  data(((1, 1.5), (2, 3.5), (3, 4.5)), mark: "*", mark-fill: red),
 )
-#plot(xmin: 0, xmax: 4, ymin: 0, ymax: 6, my-data)
 ```
 
-== `line-plot` - Line Plot Helper
+*Parameters (both functions):*
 
-Create connected line plots:
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`points`], [array], [—], [Array of `(x, y)` tuples],
+  [`mark`], [string], [`"*"`], [Marker type],
+  [`mark-size`], [float], [0.12], [Marker size in cm],
+  [`mark-fill`], [color], [blue], [Marker fill color],
+  [`mark-stroke`], [stroke], [`blue + 0.8pt`], [Marker stroke],
+  [`connect`], [bool], [false], [Join points with a line],
+  [`stroke`], [stroke], [none], [Line stroke when `connect: true`],
+  [`label`], [content], [none], [Series label],
+  [`label-pos`], [float], [0.8], [Position along series in \[0, 1\]],
+  [`label-anchor`], [string], ["south-west"], [Label anchor],
+)
+
+== `line-plot` - Connected Line Plot
+
+Create a line plot with markers (points joined by default):
 
 ```typst
-#let my-line = line-plot(
-  ((1, 2), (2, 4), (3, 5)),
-  stroke: blue + 1pt,
-  mark: "o",
+#plot(
+  xmin: 0, xmax: 4, ymin: 0, ymax: 6,
+  line-plot(((1, 2), (2, 4), (3, 5)), stroke: blue + 1pt, mark: "o"),
 )
-#plot(xmin: 0, xmax: 4, ymin: 0, ymax: 6, my-line)
 ```
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`points`], [array], [—], [Array of `(x, y)` tuples],
+  [`stroke`], [stroke], [`blue + 1.2pt`], [Line stroke],
+  [`mark`], [string], [`"o"`], [Marker type],
+  [`mark-size`], [float], [0.1], [Marker size in cm],
+  [`mark-fill`], [color], [white], [Marker fill],
+  [`mark-stroke`], [stroke], [`blue + 0.8pt`], [Marker stroke],
+  [`label`], [content], [none], [Series label],
+  [`label-pos`], [float], [0.8], [Position along series in \[0, 1\]],
+  [`label-anchor`], [string], ["south-west"], [Label anchor],
+)
 
 == `func-plot` - Function Plot Helper
 
-Create function plot specifications:
+Build a function series spec with full marker and label control:
 
 ```typst
 #let my-func = func-plot(
   x => calc.sin(x),
   stroke: blue + 1.5pt,
   label: $sin(x)$,
+  mark: "o",
+  mark-interval: 15,  // marker every 15th sample
 )
 #plot(xmin: -4, xmax: 4, ymin: -1.5, ymax: 1.5, my-func)
 ```
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`fn`], [function], [—], [Function to plot],
+  [`domain`], [array/auto], [auto], [X domain; `auto` = full plot range],
+  [`stroke`], [stroke], [`blue + 1.2pt`], [Line style],
+  [`samples`], [int], [100], [Sample count],
+  [`mark`], [string], [`"none"`], [Marker type],
+  [`mark-size`], [float], [0.1], [Marker size in cm],
+  [`mark-fill`], [color], [blue], [Marker fill],
+  [`mark-stroke`], [stroke], [`blue + 0.8pt`], [Marker stroke],
+  [`mark-interval`], [int], [10], [Draw a marker every N-th sample],
+  [`label`], [content], [none], [Curve label],
+  [`label-pos`], [float], [0.8], [Position in \[0, 1\]],
+  [`label-anchor`], [string], ["south-west"], [Label anchor],
+)
+
+== `parametric` - Ellipses and Hyperbolas
+
+Draw curves that are not single-valued functions of `x`, such as ellipses:
+
+```typst
+#plot(
+  xmin: -3, xmax: 3, ymin: -2, ymax: 2,
+  parametric(t => 2 * calc.cos(t), t => calc.sin(t), domain: (0, 2 * calc.pi)),
+)
+```
+
+For a hyperbola branch, use a finite parameter interval:
+
+```typst
+#plot(
+  xmin: -4, xmax: 4, ymin: -3, ymax: 3,
+  parametric(t => (calc.exp(t) + calc.exp(-t)) / 2, t => (calc.exp(t) - calc.exp(-t)) / 2, domain: (-1.5, 1.5)),
+  parametric(t => -(calc.exp(t) + calc.exp(-t)) / 2, t => (calc.exp(t) - calc.exp(-t)) / 2, domain: (-1.5, 1.5)),
+)
+```
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`fn-x`], [function], [—], [X coordinate as function of $t$],
+  [`fn-y`], [function], [—], [Y coordinate as function of $t$],
+  [`domain`], [array], [(0.0, 1.0)], [Parameter range $(t_1, t_2)$],
+  [`stroke`], [stroke], [`blue + 1.2pt`], [Curve stroke],
+  [`samples`], [int], [100], [Number of parameter samples],
+)
+
+== `fill-area` - Fill Under a Curve
+
+Fill the region between a function and a baseline (default: $y = 0$):
+
+```typst
+#plot(
+  xmin: 0, xmax: calc.pi, ymin: -0.2, ymax: 1.2,
+  fill-area(x => calc.sin(x), domain: (0, calc.pi), color: blue.lighten(70%)),
+  (fn: x => calc.sin(x), domain: (0, calc.pi), stroke: blue + 1.5pt),
+)
+```
+
+Use `baseline` for a non-zero base level, or `hatch` for hatched fills:
+
+```typst
+fill-area(x => calc.sin(x), domain: (0, calc.pi),
+          hatch: "ne", hatch-spacing: 5pt, hatch-stroke: blue + 0.5pt)
+```
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`fn`], [function], [—], [Function $f(x)$ bounding the top of the region],
+  [`domain`], [array/auto], [auto], [X interval; `auto` = full plot range],
+  [`baseline`], [float], [0.0], [Y-value of the bottom of the region],
+  [`color`], [color], [`luma(220)`], [Fill color; `none` for hatch-only],
+  [`hatch`], [string/none], [none], [Hatch pattern: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"`],
+  [`hatch-spacing`], [length], [`5pt`], [Spacing between hatch lines],
+  [`hatch-stroke`], [stroke], [`luma(80) + 0.5pt`], [Hatch line stroke],
+  [`samples`], [int], [80], [Sample count],
+)
+
+== `area-between` - Fill Between Two Curves
+
+Fill the region enclosed by two functions:
+
+```typst
+#plot(
+  xmin: -1, xmax: 3, ymin: -1, ymax: 10,
+  area-between(x => x * x, x => 3 * x, domain: (0, 3),
+               color: green.lighten(60%)),
+  (fn: x => x * x, stroke: blue + 1.5pt),
+  (fn: x => 3 * x, stroke: red + 1.5pt),
+)
+```
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`fn1`], [function], [—], [First bounding function],
+  [`fn2`], [function], [—], [Second bounding function],
+  [`domain`], [array/auto], [auto], [X interval; `auto` = full plot range],
+  [`color`], [color], [`luma(220)`], [Fill color; `none` for hatch-only],
+  [`hatch`], [string/none], [none], [Hatch pattern],
+  [`hatch-spacing`], [length], [`5pt`], [Hatch line spacing],
+  [`hatch-stroke`], [stroke], [`luma(80) + 0.5pt`], [Hatch line stroke],
+  [`samples`], [int], [80], [Sample count],
+)
+
+== `fill-closed` - Fill a Parametric Closed Curve
+
+Fill the interior of a closed parametric curve (the curve should start and end at the same point):
+
+```typst
+#plot(
+  xmin: -3, xmax: 3, ymin: -2, ymax: 2,
+  fill-closed(t => 2 * calc.cos(t), t => calc.sin(t),
+              domain: (0, 2 * calc.pi), color: blue.lighten(70%)),
+  parametric(t => 2 * calc.cos(t), t => calc.sin(t),
+             domain: (0, 2 * calc.pi), stroke: blue + 1.5pt),
+)
+```
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`fn-x`], [function], [—], [X coordinate as function of $t$],
+  [`fn-y`], [function], [—], [Y coordinate as function of $t$],
+  [`domain`], [array], [(0.0, 1.0)], [Parameter range; curve should be closed],
+  [`color`], [color], [`luma(220)`], [Fill color; `none` for hatch-only],
+  [`hatch`], [string/none], [none], [Hatch pattern],
+  [`hatch-spacing`], [length], [`5pt`], [Hatch line spacing],
+  [`hatch-stroke`], [stroke], [`luma(80) + 0.5pt`], [Hatch line stroke],
+  [`samples`], [int], [80], [Sample count],
+)
+
+== `vline` / `hline` - Reference Lines
+
+Draw vertical or horizontal reference lines at a fixed coordinate:
+
+```typst
+#plot(
+  xmin: -3, xmax: 3, ymin: -2, ymax: 4,
+  (fn: x => x * x - 1, stroke: blue + 1.5pt),
+  vline(1.0, stroke: red + 0.8pt + (dash: "dashed")),
+  hline(0.0, stroke: gray + 0.8pt),
+)
+```
+
+Use `ymin`/`ymax` (for `vline`) or `xmin`/`xmax` (for `hline`) to draw partial lines:
+
+```typst
+vline(2.0, ymin: 0, ymax: 4)          // vertical from y=0 to y=4
+hline(1.5, xmin: 0, xmax: 3)          // horizontal from x=0 to x=3
+```
+
+*`vline` parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`x0`], [float], [—], [X position of the line],
+  [`stroke`], [stroke], [`luma(100) + 0.6pt`], [Line stroke],
+  [`ymin`], [float/auto], [auto], [Bottom y limit (default: plot `ymin`)],
+  [`ymax`], [float/auto], [auto], [Top y limit (default: plot `ymax`)],
+)
+
+*`hline` parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`y0`], [float], [—], [Y position of the line],
+  [`stroke`], [stroke], [`luma(100) + 0.6pt`], [Line stroke],
+  [`xmin`], [float/auto], [auto], [Left x limit (default: plot `xmin`)],
+  [`xmax`], [float/auto], [auto], [Right x limit (default: plot `xmax`)],
+)
+
+== `note` - Text Annotation
+
+Place a text annotation at a data-coordinate position:
+
+```typst
+#plot(
+  xmin: -3, xmax: 3, ymin: -2, ymax: 4,
+  (fn: x => x * x - 1, stroke: blue + 1.5pt),
+  note([$f(x) = x^2 - 1$], pos: (1.5, 2.5), anchor: "west", size: 9pt),
+)
+```
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`body`], [content], [—], [Annotation text or content],
+  [`pos`], [array], [—], [`(x, y)` in data coordinates],
+  [`anchor`], [string], ["center"], [Text anchor point],
+  [`size`], [length], [`9pt`], [Font size],
+)
 
 #pagebreak()
 
@@ -1020,7 +1308,7 @@ The coordinate y-axis is positioned automatically to the left of the solid by de
 
 == Setting Defaults
 
-Use `set-plot-defaults` to configure defaults for all subsequent plots:
+Use `set-plot-defaults` to configure defaults for all subsequent plots. Any `plot` parameter can be used, including `style`:
 
 ```typst
 #set-plot-defaults(
@@ -1028,11 +1316,17 @@ Use `set-plot-defaults` to configure defaults for all subsequent plots:
   height: 6,
   show-grid: "both",
   minor-grid-step: 5,
+  style: (
+    axis: (stroke: navy + 0.8pt, arrow: (symbol: "stealth", fill: navy, scale: 0.55)),
+    ticks: (stroke: navy + 0.6pt, label-fill: navy),
+  ),
 )
 
-// All plots will now use these defaults
+// All subsequent plots will use these defaults
 #plot(xmin: -3, xmax: 3, ymin: -2, ymax: 2, ...)
 ```
+
+Per-call `style:` arguments are merged on top of the default style, so you can override individual properties without restating the full style.
 
 == Resetting Defaults
 
@@ -1058,15 +1352,23 @@ Override default styles with the `style` parameter:
 #plot(
   xmin: -3, xmax: 3, ymin: -2, ymax: 2,
   style: (
-    axis: (stroke: black + 1pt, arrow: "stealth"),
+    background: (fill: rgb("#202124")),
+    axis: (
+      stroke: white + 1pt,
+      arrow: (symbol: "stealth", fill: white, scale: 0.55),
+    ),
     grid: (
-      major: (stroke: luma(180) + 0.6pt),
-      minor: (stroke: luma(220) + 0.3pt),
+      major: (stroke: luma(120) + 0.6pt),
+      minor: (stroke: luma(80) + 0.3pt),
     ),
     ticks: (
       length: 0.12,
-      stroke: black + 0.6pt,
+      stroke: white + 0.6pt,
       label-size: 0.7em,
+      label-fill: white,
+    ),
+    labels: (
+      fill: white,
     ),
   ),
   ...
@@ -1080,18 +1382,22 @@ Override default styles with the `style` parameter:
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Property*], [*Default*], [*Description*],
+  [`background.fill`], [`none`], [Plot background fill],
+  [`background.stroke`], [`none`], [Plot background stroke],
   [`axis.stroke`], [`black + 0.8pt`], [Axis line style],
-  [`axis.arrow`], [`"stealth"`], [Arrow head style],
+  [`axis.arrow`], [`(symbol: "stealth", fill: black, scale: 0.55)`], [Arrow head style],
   [`grid.major.stroke`], [`luma(200) + 0.5pt`], [Major grid line style],
   [`grid.minor.stroke`], [`luma(230) + 0.3pt`], [Minor grid line style],
   [`ticks.length`], [`0.1`], [Tick mark length (cm)],
   [`ticks.stroke`], [`black + 0.6pt`], [Tick mark style],
   [`ticks.label-size`], [`0.65em`], [Tick label font size],
+  [`ticks.label-fill`], [`black`], [Tick label color],
   [`ticks.label-offset`], [`0.15`], [Distance from tick to label],
   [`plot.stroke`], [`blue + 1.2pt`], [Default function stroke],
   [`plot.samples`], [`100`], [Default sample count],
   [`marker.size`], [`0.12`], [Default marker size],
   [`labels.size`], [`0.8em`], [Axis label font size],
+  [`labels.fill`], [`black`], [Axis label color],
 )
 
 #pagebreak()
@@ -1114,10 +1420,10 @@ Override default styles with the `style` parameter:
   [`width`], [float], [6], [Plot width in cm],
   [`height`], [float], [6], [Plot height in cm],
   [`scale`], [float], [1], [Scale factor for entire plot],
-  [`xmin`], [float], [auto], [Minimum x value],
-  [`xmax`], [float], [auto], [Maximum x value],
-  [`ymin`], [float], [auto], [Minimum y value],
-  [`ymax`], [float], [auto], [Maximum y value],
+  [`xmin`], [float], [-5], [Minimum x value],
+  [`xmax`], [float], [5], [Maximum x value],
+  [`ymin`], [float], [-5], [Minimum y value],
+  [`ymax`], [float], [5], [Maximum y value],
 )
 
 #v(0.5em)
@@ -1128,14 +1434,14 @@ Override default styles with the `style` parameter:
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Parameter*], [*Type*], [*Default*], [*Description*],
-  [`xlabel`], [content], [none], [X-axis label],
-  [`ylabel`], [content], [none], [Y-axis label],
+  [`xlabel`], [content], [$x$], [X-axis label],
+  [`ylabel`], [content], [$y$], [Y-axis label],
   [`xlabel-pos`], [string/array], ["end"], ["end", "center", or (x, y)],
   [`ylabel-pos`], [string/array], ["end"], ["end", "center", or (x, y)],
-  [`xlabel-anchor`], [string], ["west"], [Anchor for x label],
-  [`ylabel-anchor`], [string], ["south"], [Anchor for y label],
-  [`xlabel-offset`], [array], [(0.3, 0)], [X label offset (cm)],
-  [`ylabel-offset`], [array], [(0, 0.3)], [Y label offset (cm)],
+  [`xlabel-anchor`], [string], ["north"], [Anchor for x label],
+  [`ylabel-anchor`], [string], ["east"], [Anchor for y label],
+  [`xlabel-offset`], [array], [(0.0, -0.05)], [X label offset (cm)],
+  [`ylabel-offset`], [array], [(-0.05, 0.0)], [Y label offset (cm)],
   [`axis-x-pos`], [string/float], [0], ["bottom", "center", or y-value],
   [`axis-y-pos`], [string/float], [0], ["left", "center", or x-value],
   [`axis-x-extend`], [float/array], [(0, 0.5)], [X-axis extension (left, right)],
@@ -1159,6 +1465,12 @@ Override default styles with the `style` parameter:
   [`xtick-label-step`], [int], [1], [Show x label every N ticks],
   [`ytick-label-step`], [int], [1], [Show y label every N ticks],
   [`show-origin`], [bool], [true], [Show "0" at origin],
+  [`origin-label-offset`], [array], [(-0.11, -0.11)], [Origin "0" label offset from (0,0) in cm],
+  [`origin-label-anchor`], [string], ["north-east"], [Origin "0" label anchor],
+  [`origin-leader`], [bool], [true], [Draw a subtle leader line from origin label toward (0,0)],
+  [`origin-leader-stroke`], [stroke], [`black + 0.6pt`], [Origin leader stroke],
+  [`origin-leader-gap`], [float], [0.025], [Gap from (0,0) before leader starts (cm)],
+  [`origin-leader-end-gap`], [float], [0.025], [Gap before the label anchor (cm)],
   [`unit-label-only`], [bool], [false], [Show only "1" on axes],
   [`tick-label-size`], [length], [0.65em], [Tick label font size],
   [`axis-label-size`], [length], [0.8em], [Axis label font size],
@@ -1186,7 +1498,8 @@ Override default styles with the `style` parameter:
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Parameter*], [*Type*], [*Default*], [*Description*],
-  [`style`], [dictionary], [none], [Style overrides],
+  [`style`], [dictionary], [none], [Style overrides (see Styling section)],
+  [`series`], [array], [none], [Pre-built array of series specs (alternative to positional args)],
 )
 
 == Function/Data Specification
@@ -1198,18 +1511,20 @@ Each plot item is a dictionary with these fields:
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Field*], [*Type*], [*Description*],
-  [`fn`], [function], [Function to plot: `x => y`],
+  [`fn`], [function], [Function to plot: `x => y` (return `none` to create a hole/discontinuity)],
   [`data`], [array], [Data points: `((x1, y1), (x2, y2), ...)`],
+  [`connect`], [bool], [Connect data points with a line (default: `true` for `fn`, `false` for `data`)],
   [`domain`], [array], [Function domain: `(xmin, xmax)`],
-  [`samples`], [int], [Number of samples for function],
-  [`stroke`], [stroke], [Line style],
-  [`mark`], [string], [Marker type],
-  [`mark-size`], [float], [Marker size in cm],
-  [`mark-fill`], [color], [Marker fill color],
-  [`label`], [content], [Label text],
-  [`label-pos`], [string], ["above", "below", "left", "right"],
-  [`label-at`], [float/string], [x-position or "start"/"end"/"center"],
-  [`label-anchor`], [string], [Text anchor point],
+  [`samples`], [int], [Number of samples for function (default: 100)],
+  [`stroke`], [stroke], [Line style (default: `blue + 1.2pt`)],
+  [`mark`], [string], [Marker type (default: `"none"`)],
+  [`mark-size`], [float], [Marker size in cm (default: 0.12)],
+  [`mark-fill`], [color], [Marker fill color (default: black)],
+  [`mark-stroke`], [stroke], [Marker stroke style (default: `black + 0.8pt`)],
+  [`label`], [content], [Label text placed near the curve],
+  [`label-pos`], [float], [Position along the curve in \[0, 1\] (default: 1.0)],
+  [`label-side`], [string], [Label placement relative to curve: `"above"`, `"below"`, `"left"`, `"right"`, `"above-left"`, etc.],
+  [`label-anchor`], [string], [CeTZ anchor override (alternative to `label-side`)],
 )
 
 #pagebreak()

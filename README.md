@@ -2,7 +2,7 @@
 
 A simple, pgfplots-like function plotting library for Typst. Create beautiful mathematical plots with minimal code.
 
-> **Note:** This package is built on top of [CeTZ](https://github.com/cetz-package/cetz) v0.4.2.
+> **Note:** This package is built on top of [CeTZ](https://github.com/cetz-package/cetz) v0.5.2.
 
 ## Manual
 
@@ -41,7 +41,7 @@ Click on an image to see the source code.
 ## Quick Start
 
 ```typst
-#import "@local/simple-plot:0.8.0": plot
+#import "@preview/simple-plot:0.9.0": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -58,7 +58,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Plotting Functions
 
 ```typst
-#import "@local/simple-plot:0.8.0": plot
+#import "@preview/simple-plot:0.9.0": plot
 
 // Single function
 #plot(
@@ -80,13 +80,13 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Scatter Plots
 
 ```typst
-#import "@local/simple-plot:0.8.0": plot, scatter
+#import "@preview/simple-plot:0.9.0": plot, data
 
 #plot(
   xmin: 0, xmax: 10,
   ymin: 0, ymax: 10,
   show-grid: true,
-  scatter(
+  data(
     ((1, 2), (2, 3.5), (3, 2.8), (4, 5.2), (5, 4.8)),
     mark: "*",
     mark-fill: blue,
@@ -97,7 +97,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Line Plots with Markers
 
 ```typst
-#import "@local/simple-plot:0.8.0": plot, line-plot
+#import "@preview/simple-plot:0.9.0": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -218,7 +218,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Riemann Sums
 
 ```typst
-#import "@local/simple-plot:0.8.0": plot, riemann-sum
+#import "@preview/simple-plot:0.9.0": plot, riemann-sum
 
 #plot(
   xmin: 0, xmax: 3, ymin: 0, ymax: 5,
@@ -270,7 +270,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Volume of Revolution
 
 ```typst
-#import "@local/simple-plot:0.8.0": volume-of-revolution
+#import "@preview/simple-plot:0.9.0": volume-of-revolution
 
 #volume-of-revolution(
   x => calc.sqrt(x),
@@ -332,19 +332,26 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ```typst
 #plot(
   style: (
+    background: (
+      fill: rgb("#202124"),
+    ),
     axis: (
-      stroke: black + 1pt,
-      arrow: (symbol: "stealth", fill: black, scale: 0.55),
+      stroke: white + 1pt,
+      arrow: (symbol: "stealth", fill: white, scale: 0.55),
     ),
     grid: (
-      major: (stroke: luma(200) + 0.5pt),
-      minor: (stroke: luma(230) + 0.3pt),
+      major: (stroke: luma(120) + 0.5pt),
+      minor: (stroke: luma(80) + 0.3pt),
     ),
     ticks: (
       length: 0.1,
-      stroke: black + 0.6pt,
+      stroke: white + 0.6pt,
       label-offset: 0.15,
       label-size: 10pt,
+      label-fill: white,
+    ),
+    labels: (
+      fill: white,
     ),
   ),
   // ...
@@ -354,7 +361,7 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 ## Setting Global Defaults
 
 ```typst
-#import "@local/simple-plot:0.8.0": set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.9.0": set-plot-defaults, reset-plot-defaults
 
 #set-plot-defaults(width: 6, height: 4, show-grid: "major")
 
@@ -379,13 +386,27 @@ Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits
 
 ## Dependencies
 
-- [CeTZ](https://github.com/cetz-package/cetz) (v0.4.2+)
+- [CeTZ](https://github.com/cetz-package/cetz) (v0.5.2+)
 
 ## License
 
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [0.9.0] - 2026-06-15
+
+#### Added
+- **Complete parameter reference for all public functions** — `scatter`, `data`, `line-plot`, `func-plot`, `plot-fn`, `parametric`, and `series` now have full parameter tables in the manual
+- **New manual sections** — dedicated sections for `fill-area`, `area-between`, `fill-closed`, `note`, `vline`, `hline`, and parametric plots
+- **`origin-*` parameters** — `origin-x`, `origin-y`, `origin-label`, `origin-size` documented in axis configuration table
+- **Discontinuity handling** — added note on returning `none` from plot functions to create gaps
+
+#### Fixed
+- Wrong defaults corrected in axis configuration table (`xlabel-anchor`, `ylabel-anchor`, offsets)
+- Removed non-existent marker aliases (`s`, `^`, `d`) from marker reference table
+- Incorrect `label-pos` description and removed fake `label-at` field from function spec table
+- Minor grid added to Grid Modes gallery preview
 
 ### [0.8.0] - 2026-05-21
 

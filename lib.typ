@@ -77,6 +77,15 @@
     stroke: black + 0.6pt,
     label-offset: 0.15,
     label-size: 10pt,
+    label-fill: black,
+  ),
+  origin: (
+    label-offset: (-0.11, -0.11),
+    label-anchor: "north-east",
+    leader: true,
+    leader-stroke: black + 0.6pt,
+    leader-gap: 0.025,
+    leader-end-gap: 0.025,
   ),
   plot: (
     stroke: blue + 1.2pt,
@@ -89,6 +98,7 @@
   ),
   labels: (
     size: 10pt,
+    fill: black,
     offset: 0.3,
   ),
   xlabel-style: (
@@ -101,16 +111,18 @@
   ),
 )
 
-#let merge-styles(user-style) = {
+#let merge-styles(..styles) = {
   let result = default-style
-  if user-style != none {
-    for (key, value) in user-style {
-      if key in result and type(value) == dictionary {
-        for (k, v) in value {
-          result.at(key).insert(k, v)
+  for user-style in styles.pos() {
+    if user-style != none {
+      for (key, value) in user-style {
+        if key in result and type(value) == dictionary {
+          for (k, v) in value {
+            result.at(key).insert(k, v)
+          }
+        } else {
+          result.insert(key, value)
         }
-      } else {
-        result.insert(key, value)
       }
     }
   }
@@ -160,6 +172,50 @@
   let ny2 = y1 + t1 * dy
 
   ((nx1, ny1), (nx2, ny2))
+}
+
+// Clip a line segment to an ellipse (cx, cy, rx, ry) using parametric quadratic solve
+#let clip-segment-ellipse(p1, p2, cx, cy, rx, ry) = {
+  let (x1, y1) = p1
+  let (x2, y2) = p2
+  let dx = x2 - x1
+  let dy = y2 - y1
+
+  let is-inside(x, y) = {
+    let ex = (x - cx) / rx
+    let ey = (y - cy) / ry
+    ex * ex + ey * ey <= 1.0001
+  }
+
+  let i1 = is-inside(x1, y1)
+  let i2 = is-inside(x2, y2)
+  if i1 and i2 { return (p1, p2) }
+
+  let A = (dx / rx) * (dx / rx) + (dy / ry) * (dy / ry)
+  if A < 1e-10 { return none }
+
+  let ax = x1 - cx
+  let ay = y1 - cy
+  let B = 2.0 * (ax * dx / (rx * rx) + ay * dy / (ry * ry))
+  let C = (ax / rx) * (ax / rx) + (ay / ry) * (ay / ry) - 1.0
+
+  let disc = B * B - 4.0 * A * C
+  if disc < 0 { return none }
+
+  let sd = calc.sqrt(disc)
+  let ta = (-B - sd) / (2.0 * A)
+  let tb = (-B + sd) / (2.0 * A)
+  let te = calc.min(ta, tb)
+  let tx = calc.max(ta, tb)
+
+  let t0 = if i1 { 0.0 } else { calc.max(0.0, te) }
+  let t1 = if i2 { 1.0 } else { calc.min(1.0, tx) }
+
+  if t0 >= t1 or t1 < 0.0 or t0 > 1.0 { return none }
+  (
+    (x1 + t0 * dx, y1 + t0 * dy),
+    (x1 + t1 * dx, y1 + t1 * dy),
+  )
 }
 
 // Convert user-friendly label-side to CeTZ anchor
@@ -305,6 +361,12 @@
 /// - axis-x-extend (auto, float, array): X-axis extension beyond plot (value or (left, right))
 /// - axis-y-extend (auto, float, array): Y-axis extension beyond plot (value or (bottom, top))
 /// - show-origin (auto, bool): Show "0" label at origin (default: true)
+/// - origin-label-offset (auto, array): Origin label offset from (0,0) in cm (default: (-0.11, -0.11))
+/// - origin-label-anchor (auto, str): Origin label anchor (default: "north-east")
+/// - origin-leader (auto, bool): Draw a subtle leader from origin label toward (0,0) (default: true)
+/// - origin-leader-stroke (auto, stroke): Origin leader stroke (default: black + 0.6pt)
+/// - origin-leader-gap (auto, float): Gap from origin before leader starts, in cm (default: 0.025)
+/// - origin-leader-end-gap (auto, float): Gap before the label anchor, in cm (default: 0.025)
 /// - tick-label-size (auto, length): Font size for tick labels (default: 0.65em)
 /// - axis-label-size (auto, length): Font size for axis labels x/y (default: 0.8em)
 /// - style (none, dictionary): Style overrides
@@ -342,6 +404,12 @@
   axis-x-extend: auto,
   axis-y-extend: auto,
   show-origin: auto,
+  origin-label-offset: auto,
+  origin-label-anchor: auto,
+  origin-leader: auto,
+  origin-leader-stroke: auto,
+  origin-leader-gap: auto,
+  origin-leader-end-gap: auto,
   tick-label-size: auto,
   axis-label-size: auto,
   style: none,
@@ -390,6 +458,12 @@
   let axis-x-extend = resolve(axis-x-extend, "axis-x-extend", (0, 0.5))
   let axis-y-extend = resolve(axis-y-extend, "axis-y-extend", (0, 0.5))
   let show-origin = resolve(show-origin, "show-origin", true)
+  let origin-label-offset = resolve(origin-label-offset, "origin-label-offset", auto)
+  let origin-label-anchor = resolve(origin-label-anchor, "origin-label-anchor", auto)
+  let origin-leader = resolve(origin-leader, "origin-leader", auto)
+  let origin-leader-stroke = resolve(origin-leader-stroke, "origin-leader-stroke", auto)
+  let origin-leader-gap = resolve(origin-leader-gap, "origin-leader-gap", auto)
+  let origin-leader-end-gap = resolve(origin-leader-end-gap, "origin-leader-end-gap", auto)
   let tick-label-size = resolve(tick-label-size, "tick-label-size", auto)
   let axis-label-size = resolve(axis-label-size, "axis-label-size", auto)
 
@@ -397,7 +471,7 @@
   let x-extend = if type(axis-x-extend) == array { axis-x-extend } else { (axis-x-extend, axis-x-extend) }
   let y-extend = if type(axis-y-extend) == array { axis-y-extend } else { (axis-y-extend, axis-y-extend) }
 
-  let s = merge-styles(style)
+  let s = merge-styles(defaults.at("style", default: none), style)
 
   // Override style values with direct parameters if set
   if tick-label-size != auto {
@@ -405,6 +479,24 @@
   }
   if axis-label-size != auto {
     s.labels.size = axis-label-size
+  }
+  if origin-label-offset != auto {
+    s.origin.label-offset = origin-label-offset
+  }
+  if origin-label-anchor != auto {
+    s.origin.label-anchor = origin-label-anchor
+  }
+  if origin-leader != auto {
+    s.origin.leader = origin-leader
+  }
+  if origin-leader-stroke != auto {
+    s.origin.leader-stroke = origin-leader-stroke
+  }
+  if origin-leader-gap != auto {
+    s.origin.leader-gap = origin-leader-gap
+  }
+  if origin-leader-end-gap != auto {
+    s.origin.leader-end-gap = origin-leader-end-gap
   }
 
   // Scale factors in CeTZ canvas units
@@ -664,12 +756,22 @@
     if show-grid == "minor" or show-grid == "both" or show-grid == true {
       let minor-x-step = x-ticks.step / minor-grid-step
       let minor-y-step = y-ticks.step / minor-grid-step
-      let nx = int(calc.ceil((xmax - xmin) / minor-x-step)) + 1
-      let ny = int(calc.ceil((ymax - ymin) / minor-y-step)) + 1
+      let is-major-x(x) = {
+        for major-x in x-ticks.ticks {
+          if calc.abs(x - major-x) < 0.0001 { return true }
+        }
+        false
+      }
+      let is-major-y(y) = {
+        for major-y in y-ticks.ticks {
+          if calc.abs(y - major-y) < 0.0001 { return true }
+        }
+        false
+      }
 
-      for i in range(nx) {
-        let x = xmin + i * minor-x-step
-        if x <= xmax {
+      let x = calc.ceil(xmin / minor-x-step) * minor-x-step
+      while x <= xmax + 0.0001 {
+        if not is-major-x(x) {
           let cx = (x - xmin) * x-scale
           if grid-label-break and x-break-zones.len() + y-break-zones.len() > 0 {
             draw-vline-with-gaps(cx, grid-y-start, grid-y-end, s.grid.minor.stroke)
@@ -677,10 +779,12 @@
             line((cx, grid-y-start), (cx, grid-y-end), stroke: s.grid.minor.stroke)
           }
         }
+        x = x + minor-x-step
       }
-      for i in range(ny) {
-        let y = ymin + i * minor-y-step
-        if y <= ymax {
+
+      let y = calc.ceil(ymin / minor-y-step) * minor-y-step
+      while y <= ymax + 0.0001 {
+        if not is-major-y(y) {
           let cy = (y - ymin) * y-scale
           if grid-label-break and x-break-zones.len() + y-break-zones.len() > 0 {
             draw-hline-with-gaps(cy, grid-x-start, grid-x-end, s.grid.minor.stroke)
@@ -688,6 +792,7 @@
             line((grid-x-start, cy), (grid-x-end, cy), stroke: s.grid.minor.stroke)
           }
         }
+        y = y + minor-y-step
       }
     }
 
@@ -711,108 +816,124 @@
       }
     }
 
-    // Axes (with optional extension beyond plot area)
-    let (x1, y-ax) = to-canvas(xmin, x-axis-y)
-    let (x2, _) = to-canvas(xmax, x-axis-y)
-    let x1-ext = x1 - x-extend.at(0) * x-scale
-    let x2-ext = x2 + x-extend.at(1) * x-scale
-    line((x1-ext, y-ax), (x2-ext, y-ax), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
+    // Axes, ticks, and axis labels are drawn after plot series so curves cannot cover labels.
+    let draw-axes-ticks-labels() = {
+      // Axes (with optional extension beyond plot area)
+      let (x1, y-ax) = to-canvas(xmin, x-axis-y)
+      let (x2, _) = to-canvas(xmax, x-axis-y)
+      let x1-ext = x1 - x-extend.at(0) * x-scale
+      let x2-ext = x2 + x-extend.at(1) * x-scale
+      line((x1-ext, y-ax), (x2-ext, y-ax), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
 
-    let (x-ax, y1) = to-canvas(y-axis-x, ymin)
-    let (_, y2) = to-canvas(y-axis-x, ymax)
-    let y1-ext = y1 - y-extend.at(0) * y-scale
-    let y2-ext = y2 + y-extend.at(1) * y-scale
-    line((x-ax, y1-ext), (x-ax, y2-ext), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
+      let (x-ax, y1) = to-canvas(y-axis-x, ymin)
+      let (_, y2) = to-canvas(y-axis-x, ymax)
+      let y1-ext = y1 - y-extend.at(0) * y-scale
+      let y2-ext = y2 + y-extend.at(1) * y-scale
+      line((x-ax, y1-ext), (x-ax, y2-ext), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
 
-    // Ticks and labels (tick-len already defined above)
-    for (i, x) in x-ticks.ticks.enumerate() {
-      // Skip tick at xmax (where arrow is)
-      if calc.abs(x - xmax) < 0.0001 { continue }
-      let (cx, cy) = to-canvas(x, x-axis-y)
-      line((cx, cy - tick-len), (cx, cy + tick-len), stroke: s.ticks.stroke)
-      // Only show label if x is a multiple of (tick-step * label-step)
-      let label-interval = x-ticks.step * xtick-label-step
-      let show-this-label = calc.abs(calc.rem(x, label-interval)) < 0.0001 or calc.abs(calc.rem(x, label-interval) - label-interval) < 0.0001
-      // If unit-label-only, only show label for x = 1 (not -1 or other values)
-      if unit-label-only and calc.abs(x - 1) > 0.0001 {
-        show-this-label = false
-      }
-      // Avoid duplicate "0" when explicit origin label is enabled.
-      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 and calc.abs(x) < 0.0001 {
-        show-this-label = false
-      }
-      if show-this-label and xtick-labels != none {
-        let label = if xtick-labels == auto { format-number(x) }
-                    else if i < xtick-labels.len() { xtick-labels.at(i) }
-                    else { "" }
-        let render-label = if type(label) == content { true }
-                           else { label != "" and label != "0" }
-        if render-label {
-          content((cx, cy - tick-len - label-offset),
-                  text(size: s.ticks.label-size)[#label], anchor: "north")
+      // Ticks and labels (tick-len already defined above)
+      for (i, x) in x-ticks.ticks.enumerate() {
+        // Skip tick at xmax (where arrow is)
+        if calc.abs(x - xmax) < 0.0001 { continue }
+        let (cx, cy) = to-canvas(x, x-axis-y)
+        line((cx, cy - tick-len), (cx, cy + tick-len), stroke: s.ticks.stroke)
+        // Only show label if x is a multiple of (tick-step * label-step)
+        let label-interval = x-ticks.step * xtick-label-step
+        let show-this-label = calc.abs(calc.rem(x, label-interval)) < 0.0001 or calc.abs(calc.rem(x, label-interval) - label-interval) < 0.0001
+        // If unit-label-only, only show label for x = 1 (not -1 or other values)
+        if unit-label-only and calc.abs(x - 1) > 0.0001 {
+          show-this-label = false
+        }
+        // Avoid duplicate "0" when explicit origin label is enabled.
+        if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 and calc.abs(x) < 0.0001 {
+          show-this-label = false
+        }
+        if show-this-label and xtick-labels != none {
+          let label = if xtick-labels == auto { format-number(x) }
+                      else if i < xtick-labels.len() { xtick-labels.at(i) }
+                      else { "" }
+          let render-label = if type(label) == content { true }
+                             else { label != "" and label != "0" }
+          if render-label {
+            content((cx, cy - tick-len - label-offset),
+                    text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label], anchor: "north")
+          }
         }
       }
-    }
 
-    for (i, y) in y-ticks.ticks.enumerate() {
-      // Skip tick at ymax (where arrow is)
-      if calc.abs(y - ymax) < 0.0001 { continue }
-      let (cx, cy) = to-canvas(y-axis-x, y)
-      line((cx - tick-len, cy), (cx + tick-len, cy), stroke: s.ticks.stroke)
-      // Only show label if y is a multiple of (tick-step * label-step)
-      let label-interval = y-ticks.step * ytick-label-step
-      let show-this-label = calc.abs(calc.rem(y, label-interval)) < 0.0001 or calc.abs(calc.rem(y, label-interval) - label-interval) < 0.0001
-      // If unit-label-only, only show label for y = 1 (not -1 or other values)
-      if unit-label-only and calc.abs(y - 1) > 0.0001 {
-        show-this-label = false
-      }
-      // Avoid duplicate "0" when explicit origin label is enabled.
-      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 and calc.abs(y) < 0.0001 {
-        show-this-label = false
-      }
-      if show-this-label and ytick-labels != none {
-        let label = if ytick-labels == auto { format-number(y) }
-                    else if i < ytick-labels.len() { ytick-labels.at(i) }
-                    else { "" }
-        let render-label = if type(label) == content { true }
-                           else { label != "" and label != "0" }
-        if render-label {
-          content((cx - tick-len - label-offset, cy),
-                  text(size: s.ticks.label-size)[#label], anchor: "east")
+      for (i, y) in y-ticks.ticks.enumerate() {
+        // Skip tick at ymax (where arrow is)
+        if calc.abs(y - ymax) < 0.0001 { continue }
+        let (cx, cy) = to-canvas(y-axis-x, y)
+        line((cx - tick-len, cy), (cx + tick-len, cy), stroke: s.ticks.stroke)
+        // Only show label if y is a multiple of (tick-step * label-step)
+        let label-interval = y-ticks.step * ytick-label-step
+        let show-this-label = calc.abs(calc.rem(y, label-interval)) < 0.0001 or calc.abs(calc.rem(y, label-interval) - label-interval) < 0.0001
+        // If unit-label-only, only show label for y = 1 (not -1 or other values)
+        if unit-label-only and calc.abs(y - 1) > 0.0001 {
+          show-this-label = false
+        }
+        // Avoid duplicate "0" when explicit origin label is enabled.
+        if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 and calc.abs(y) < 0.0001 {
+          show-this-label = false
+        }
+        if show-this-label and ytick-labels != none {
+          let label = if ytick-labels == auto { format-number(y) }
+                      else if i < ytick-labels.len() { ytick-labels.at(i) }
+                      else { "" }
+          let render-label = if type(label) == content { true }
+                             else { label != "" and label != "0" }
+          if render-label {
+            content((cx - tick-len - label-offset, cy),
+                    text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label], anchor: "east")
+          }
         }
       }
-    }
 
-    // Origin label
-    if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
-      let (ox, oy) = to-canvas(0, 0)
-      content((ox - tick-len - 0.05, oy - tick-len - 0.05),
-              text(size: s.ticks.label-size)[0], anchor: "north-east")
-    }
+      // Origin label
+      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+        let (ox, oy) = to-canvas(0, 0)
+        let (dx, dy) = s.origin.label-offset
+        let label-pos = (ox + dx, oy + dy)
+        if s.origin.leader {
+          let dist = calc.sqrt(dx * dx + dy * dy)
+          if dist > s.origin.leader-gap + s.origin.leader-end-gap {
+            let ux = dx / dist
+            let uy = dy / dist
+            line(
+              (ox + ux * s.origin.leader-gap, oy + uy * s.origin.leader-gap),
+              (ox + ux * (dist - s.origin.leader-end-gap), oy + uy * (dist - s.origin.leader-end-gap)),
+              stroke: s.origin.leader-stroke,
+            )
+          }
+        }
+        content(label-pos, text(size: s.ticks.label-size, fill: s.ticks.label-fill)[0], anchor: s.origin.label-anchor)
+      }
 
-    // Axis labels - positioned at the extended arrow tips
-    if xlabel != none {
-      let (lx, ly) = if xlabel-pos == "end" {
-        // Position just before the extended arrow tip so labels stay inside tight panels.
-        let (base-x, base-y) = to-canvas(xmax, x-axis-y)
-        (base-x + x-extend.at(1) * x-scale - 0.18, base-y)
-      } else if xlabel-pos == "center" { to-canvas((xmin + xmax) / 2, x-axis-y) }
-        else if type(xlabel-pos) == array { to-canvas(xlabel-pos.at(0), xlabel-pos.at(1)) }
-        else { to-canvas(xmax, x-axis-y) }
-      let (ox, oy) = xlabel-offset
-      content((lx + ox, ly + oy), text(size: s.labels.size)[#xlabel], anchor: xlabel-anchor)
-    }
+      // Axis labels - positioned at the extended arrow tips
+      if xlabel != none {
+        let (lx, ly) = if xlabel-pos == "end" {
+          // Position just before the extended arrow tip so labels stay inside tight panels.
+          let (base-x, base-y) = to-canvas(xmax, x-axis-y)
+          (base-x + x-extend.at(1) * x-scale - 0.18, base-y)
+        } else if xlabel-pos == "center" { to-canvas((xmin + xmax) / 2, x-axis-y) }
+          else if type(xlabel-pos) == array { to-canvas(xlabel-pos.at(0), xlabel-pos.at(1)) }
+          else { to-canvas(xmax, x-axis-y) }
+        let (ox, oy) = xlabel-offset
+        content((lx + ox, ly + oy), text(size: s.labels.size, fill: s.labels.fill)[#xlabel], anchor: xlabel-anchor)
+      }
 
-    if ylabel != none {
-      let (lx, ly) = if ylabel-pos == "end" {
-        // Position just below the extended arrow tip so labels stay inside tight panels.
-        let (base-x, base-y) = to-canvas(y-axis-x, ymax)
-        (base-x, base-y + y-extend.at(1) * y-scale - 0.18)
-      } else if ylabel-pos == "center" { to-canvas(y-axis-x, (ymin + ymax) / 2) }
-        else if type(ylabel-pos) == array { to-canvas(ylabel-pos.at(0), ylabel-pos.at(1)) }
-        else { to-canvas(y-axis-x, ymax) }
-      let (ox, oy) = ylabel-offset
-      content((lx + ox, ly + oy), text(size: s.labels.size)[#ylabel], anchor: ylabel-anchor)
+      if ylabel != none {
+        let (lx, ly) = if ylabel-pos == "end" {
+          // Position just below the extended arrow tip so labels stay inside tight panels.
+          let (base-x, base-y) = to-canvas(y-axis-x, ymax)
+          (base-x, base-y + y-extend.at(1) * y-scale - 0.18)
+        } else if ylabel-pos == "center" { to-canvas(y-axis-x, (ymin + ymax) / 2) }
+          else if type(ylabel-pos) == array { to-canvas(ylabel-pos.at(0), ylabel-pos.at(1)) }
+          else { to-canvas(y-axis-x, ymax) }
+        let (ox, oy) = ylabel-offset
+        content((lx + ox, ly + oy), text(size: s.labels.size, fill: s.labels.fill)[#ylabel], anchor: ylabel-anchor)
+      }
     }
 
     // Extended bounds for clipping area
@@ -837,10 +958,16 @@
     // Merge series: array with positional functions
     let all-funcs = if series != none { series + functions.pos() } else { functions.pos() }
 
+    // Separate zoom inset specs — rendered after axes
+    let is-zoom-spec(f) = type(f) == dictionary and "zoom-region" in f
+    let zoom-specs = all-funcs.filter(is-zoom-spec)
+    let all-funcs = all-funcs.filter(f => not is-zoom-spec(f))
+
     // Plot functions and data (with manual line clipping)
     for func-spec in all-funcs {
+      let func-spec = if type(func-spec) == function { (fn: func-spec) } else { func-spec }
       let fn = func-spec.at("fn", default: none)
-      let data-points = func-spec.at("points", default: none)
+      let data-points = func-spec.at("points", default: func-spec.at("data", default: none))
       let stroke-style = func-spec.at("stroke", default: s.plot.stroke)
       let mark-type = func-spec.at("mark", default: "none")
       let mark-size = func-spec.at("mark-size", default: s.marker.size)
@@ -1262,6 +1389,307 @@
         }
       }
     }
+
+    // Keep axes and tick labels above curves, markers, and filled regions.
+    draw-axes-ticks-labels()
+
+    // ── Zoom / Spy Insets ─────────────────────────────────────────────────
+    for zs in zoom-specs {
+      // Resolve zoom region: explicit corners or center+size-cm (square on canvas)
+      let (zx1, zy1, zx2, zy2) = if "zoom-center" in zs and "zoom-size-cm" in zs {
+        let (zcx, zcy) = zs.at("zoom-center")
+        let sz = zs.at("zoom-size-cm")
+        let hx = sz / (2 * x-scale)
+        let hy = sz / (2 * y-scale)
+        (zcx - hx, zcy - hy, zcx + hx, zcy + hy)
+      } else {
+        let r = zs.at("zoom-region")
+        (r.at(0), r.at(1), r.at(2), r.at(3))
+      }
+
+      // Resolve inset size: explicit, magnification-based, or default
+      let z-mag  = zs.at("magnification", default: none)
+      let zoom-w = if "zoom-width" in zs   { zs.at("zoom-width") }
+                   else if z-mag != none   { (zx2 - zx1) * x-scale * z-mag }
+                   else                    { 3.5 }
+      let zoom-h = if "zoom-height" in zs  { zs.at("zoom-height") }
+                   else if z-mag != none   { (zy2 - zy1) * y-scale * z-mag }
+                   else                    { 3.5 }
+
+      let lens-shape  = zs.at("lens-shape", default: "rect")
+      let do-connect  = zs.at("connect", default: true)
+      let accent-col  = zs.at("accent", default: rgb("#4a90d9"))
+      let reg-fill    = zs.at("region-fill", default: none)
+      let reg-stk     = zs.at("region-stroke", default: accent-col + 0.9pt)
+      let box-fill-v  = zs.at("box-fill", default: white)
+      let box-stk     = zs.at("box-stroke", default: accent-col + 1pt)
+      let conn-stk    = zs.at("connector-stroke", default: (paint: luma(140), thickness: 0.5pt, dash: "dashed"))
+      let conn-fill   = zs.at("connector-fill", default: none)
+      // Shadow: on by default only for rect with a solid background fill
+      let shadow-default = lens-shape != "circle" and box-fill-v != none
+      let do-shadow   = zs.at("shadow", default: shadow-default)
+      // Grid inside inset: only useful when background is opaque
+      let do-igrid    = zs.at("show-inset-grid", default: box-fill-v != none)
+      let do-mag      = zs.at("show-magnification", default: false)
+      let z-label     = zs.at("label", default: none)
+
+      // Canvas coords of the zoom region bounding box
+      let (crx1, cry1) = to-canvas(zx1, zy1)
+      let (crx2, cry2) = to-canvas(zx2, zy2)
+      let lens-cx = (crx1 + crx2) / 2
+      let lens-cy = (cry1 + cry2) / 2
+      let lens-rx = (crx2 - crx1) / 2
+      let lens-ry = (cry2 - cry1) / 2
+
+      // Canvas center of the inset box
+      let (cix, ciy) = {
+        let at-val = zs.at("at", default: auto)
+        let margin-x = zoom-w / 2 + 0.2
+        let margin-y = zoom-h / 2 + 0.2
+        if at-val == auto {
+          // Smart default: opposite quadrant from zoom center
+          let nc-x = ((zx1 + zx2) / 2 - xmin) / (xmax - xmin)
+          let nc-y = ((zy1 + zy2) / 2 - ymin) / (ymax - ymin)
+          let tx = if nc-x > 0.5 { 0.25 } else { 0.75 }
+          let ty = if nc-y > 0.5 { 0.25 } else { 0.75 }
+          (width * tx, height * ty)
+        } else if type(at-val) == str {
+          // Named placement keywords: keep inset inside the canvas with margin
+          if at-val == "top-right"    { (width  - margin-x, height - margin-y) }
+          else if at-val == "top-left"     { (margin-x,          height - margin-y) }
+          else if at-val == "bottom-right" { (width  - margin-x, margin-y) }
+          else if at-val == "bottom-left"  { (margin-x,          margin-y) }
+          else if at-val == "top"          { (width / 2,          height - margin-y) }
+          else if at-val == "bottom"       { (width / 2,          margin-y) }
+          else if at-val == "left"         { (margin-x,           height / 2) }
+          else if at-val == "right"        { (width - margin-x,   height / 2) }
+          else { (width * 0.75, height * 0.75) }
+        } else {
+          to-canvas(at-val.at(0), at-val.at(1))
+        }
+      }
+
+      let bx1 = cix - zoom-w / 2
+      let by1 = ciy - zoom-h / 2
+      let bx2 = cix + zoom-w / 2
+      let by2 = ciy + zoom-h / 2
+
+      // Pick two non-crossing connector corner pairs
+      let ddx = cix - lens-cx
+      let ddy = ciy - lens-cy
+
+      let (cf1, cf2, ct1, ct2) = if calc.abs(ddx) >= calc.abs(ddy) {
+        if ddx > 0 { ((crx2, cry1), (crx2, cry2), (bx1, by1), (bx1, by2)) }
+        else       { ((crx1, cry1), (crx1, cry2), (bx2, by1), (bx2, by2)) }
+      } else {
+        if ddy > 0 { ((crx1, cry2), (crx2, cry2), (bx1, by1), (bx2, by1)) }
+        else       { ((crx1, cry1), (crx2, cry1), (bx1, by2), (bx2, by2)) }
+      }
+
+      // Connector lines
+      if do-connect {
+        if conn-fill != none {
+          line(cf1, ct1, ct2, cf2, close: true, fill: conn-fill, stroke: none)
+        }
+        line(cf1, ct1, stroke: conn-stk)
+        line(cf2, ct2, stroke: conn-stk)
+      }
+
+      // Drop shadow (shape-aware)
+      if do-shadow {
+        let sh = 0.07
+        if lens-shape == "circle" {
+          let ic-x = (bx1 + bx2) / 2 + sh
+          let ic-y = (by1 + by2) / 2 - sh
+          let sh-pts = range(65).map(i => {
+            let t = i * 360deg / 64
+            (ic-x + zoom-w / 2 * calc.cos(t), ic-y + zoom-h / 2 * calc.sin(t))
+          })
+          line(..sh-pts, close: true, fill: luma(185), stroke: none)
+        } else {
+          rect((bx1 + sh, by1 - sh), (bx2 + sh, by2 - sh), fill: luma(185), stroke: none)
+        }
+      }
+
+      // Inset background (circle: filled ellipse; rect: filled rectangle)
+      if box-fill-v != none {
+        if lens-shape == "circle" {
+          let ic-x = (bx1 + bx2) / 2
+          let ic-y = (by1 + by2) / 2
+          let bg-pts = range(65).map(i => {
+            let t = i * 360deg / 64
+            (ic-x + zoom-w / 2 * calc.cos(t), ic-y + zoom-h / 2 * calc.sin(t))
+          })
+          line(..bg-pts, close: true, fill: box-fill-v, stroke: none)
+        } else {
+          rect((bx1, by1), (bx2, by2), fill: box-fill-v, stroke: none)
+        }
+      }
+
+      // Subtle grid inside inset aligned to main plot tick spacing
+      let ic-cx = (bx1 + bx2) / 2
+      let ic-cy = (by1 + by2) / 2
+      let ic-rx = zoom-w / 2
+      let ic-ry = zoom-h / 2
+
+      if do-igrid {
+        let g-stk = luma(210) + 0.4pt
+        let gx = calc.ceil(zx1 / x-ticks.step) * x-ticks.step
+        while gx <= zx2 + 0.0001 {
+          let cx-g = bx1 + (gx - zx1) * zoom-w / (zx2 - zx1)
+          if cx-g >= bx1 - 0.001 and cx-g <= bx2 + 0.001 {
+            if lens-shape == "circle" {
+              let cl = clip-segment-ellipse((cx-g, by1), (cx-g, by2), ic-cx, ic-cy, ic-rx, ic-ry)
+              if cl != none { let (p1, p2) = cl; line(p1, p2, stroke: g-stk) }
+            } else {
+              line((cx-g, by1), (cx-g, by2), stroke: g-stk)
+            }
+          }
+          gx = gx + x-ticks.step
+        }
+        let gy = calc.ceil(zy1 / y-ticks.step) * y-ticks.step
+        while gy <= zy2 + 0.0001 {
+          let cy-g = by1 + (gy - zy1) * zoom-h / (zy2 - zy1)
+          if cy-g >= by1 - 0.001 and cy-g <= by2 + 0.001 {
+            if lens-shape == "circle" {
+              let cl = clip-segment-ellipse((bx1, cy-g), (bx2, cy-g), ic-cx, ic-cy, ic-rx, ic-ry)
+              if cl != none { let (p1, p2) = cl; line(p1, p2, stroke: g-stk) }
+            } else {
+              line((bx1, cy-g), (bx2, cy-g), stroke: g-stk)
+            }
+          }
+          gy = gy + y-ticks.step
+        }
+      }
+
+      // Re-render plot series inside the inset (clipped to circle or rect)
+      let z-x-sc = zoom-w / (zx2 - zx1)
+      let z-y-sc = zoom-h / (zy2 - zy1)
+      let to-zoom(x, y) = (bx1 + (x - zx1) * z-x-sc, by1 + (y - zy1) * z-y-sc)
+
+      for fs in all-funcs {
+        let fs = if type(fs) == function { (fn: fs) } else { fs }
+        let fs-stk = fs.at("stroke", default: s.plot.stroke)
+
+        if "fn" in fs {
+          let fn-z   = fs.at("fn")
+          let z-samp = fs.at("samples", default: s.plot.samples)
+          let fs-dom = fs.at("domain", default: none)
+          let d1-z   = if fs-dom != none { calc.max(float(fs-dom.at(0)), zx1) } else { zx1 }
+          let d2-z   = if fs-dom != none { calc.min(float(fs-dom.at(1)), zx2) } else { zx2 }
+          if d1-z < d2-z {
+            let stp-z = (d2-z - d1-z) / z-samp
+            let z-pts = ()
+            for i in range(z-samp + 1) {
+              let xv = d1-z + i * stp-z
+              let yv = fn-z(xv)
+              if yv != none and not float(yv).is-nan() {
+                z-pts.push(to-zoom(xv, float(yv)))
+              } else {
+                z-pts.push(none)
+              }
+            }
+            for j in range(z-pts.len() - 1) {
+              let p1 = z-pts.at(j)
+              let p2 = z-pts.at(j + 1)
+              if p1 != none and p2 != none {
+                let cl = if lens-shape == "circle" {
+                  clip-segment-ellipse(p1, p2, ic-cx, ic-cy, ic-rx, ic-ry)
+                } else {
+                  clip-segment(p1, p2, bx1, by1, bx2, by2)
+                }
+                if cl != none {
+                  let (cp1, cp2) = cl
+                  line(cp1, cp2, stroke: fs-stk)
+                }
+              }
+            }
+          }
+
+        } else if "points" in fs {
+          let pts-z    = fs.at("points")
+          let conn-z   = fs.at("connect", default: true)
+          let canvas-z = ()
+          for pt in pts-z {
+            let (xv, yv) = pt
+            let in-zx = xv >= zx1 - 0.0001 and xv <= zx2 + 0.0001
+            let in-zy = yv >= zy1 - 0.0001 and yv <= zy2 + 0.0001
+            if in-zx and in-zy {
+              canvas-z.push(to-zoom(xv, yv))
+            }
+          }
+          if conn-z and canvas-z.len() > 1 {
+            line(..canvas-z, stroke: fs-stk)
+          }
+          let mk-z = fs.at("mark", default: "none")
+          if mk-z != "none" {
+            for pt-z in canvas-z {
+              draw-marker(none, pt-z, mk-z,
+                fs.at("mark-size",   default: s.marker.size),
+                fs.at("mark-fill",   default: s.marker.fill),
+                fs.at("mark-stroke", default: s.marker.stroke))
+            }
+          }
+        }
+      }
+
+      // Draw axis lines inside the inset if they pass through the zoom region
+      let draw-inset-line(p1, p2) = {
+        let cl = if lens-shape == "circle" {
+          clip-segment-ellipse(p1, p2, ic-cx, ic-cy, ic-rx, ic-ry)
+        } else {
+          clip-segment(p1, p2, bx1, by1, bx2, by2)
+        }
+        if cl != none { let (cp1, cp2) = cl; line(cp1, cp2, stroke: s.axis.stroke) }
+      }
+      // X-axis
+      if x-axis-y >= zy1 - 0.0001 and x-axis-y <= zy2 + 0.0001 {
+        let (_, y-ax-z) = to-zoom(zx1, x-axis-y)
+        draw-inset-line((bx1, y-ax-z), (bx2, y-ax-z))
+      }
+      // Y-axis
+      if y-axis-x >= zx1 - 0.0001 and y-axis-x <= zx2 + 0.0001 {
+        let (x-ax-z, _) = to-zoom(y-axis-x, zy1)
+        draw-inset-line((x-ax-z, by1), (x-ax-z, by2))
+      }
+
+      // Spy glass shape on the main plot (drawn on top of all content)
+      if lens-shape == "circle" {
+        let n-c = 64
+        let circ-pts = range(n-c + 1).map(i => {
+          let t = i * 360deg / n-c
+          (lens-cx + lens-rx * calc.cos(t), lens-cy + lens-ry * calc.sin(t))
+        })
+        line(..circ-pts, close: true, stroke: reg-stk, fill: reg-fill)
+      } else {
+        rect((crx1, cry1), (crx2, cry2), stroke: reg-stk, fill: reg-fill)
+      }
+
+      // Inset border
+      if lens-shape == "circle" {
+        let ic-x = (bx1 + bx2) / 2
+        let ic-y = (by1 + by2) / 2
+        let n-c = 64
+        let circ-pts = range(n-c + 1).map(i => {
+          let t = i * 360deg / n-c
+          (ic-x + zoom-w / 2 * calc.cos(t), ic-y + zoom-h / 2 * calc.sin(t))
+        })
+        line(..circ-pts, close: true, fill: none, stroke: box-stk)
+      } else {
+        rect((bx1, by1), (bx2, by2), fill: none, stroke: box-stk)
+      }
+
+      // Optional label / magnification factor
+      let eff-lbl = if z-label != none {
+        z-label
+      } else if do-mag {
+        let mag-v = calc.round(z-x-sc / x-scale * 10) / 10
+        text(size: 7pt, fill: accent-col)[×#mag-v]
+      } else { none }
+      if eff-lbl != none {
+        content((bx1 + 0.12, by2 - 0.06), eff-lbl, anchor: "north-west")
+      }
+    }
   })
 }
 
@@ -1319,6 +1747,34 @@
   mark-fill: mark-fill, mark-stroke: mark-stroke,
   connect: connect, stroke: stroke, label: label,
   label-pos: label-pos, label-anchor: label-anchor,
+)
+
+/// Create a data-point series specification.
+///
+/// This is an alias for `scatter` with the same options. Use `connect: true`
+/// to join the points with line segments.
+#let data(
+  points,
+  mark: "*",
+  mark-size: 0.12,
+  mark-fill: blue,
+  mark-stroke: blue + 0.8pt,
+  connect: false,
+  stroke: none,
+  label: none,
+  label-pos: 0.8,
+  label-anchor: "south-west",
+) = scatter(
+  points,
+  mark: mark,
+  mark-size: mark-size,
+  mark-fill: mark-fill,
+  mark-stroke: mark-stroke,
+  connect: connect,
+  stroke: stroke,
+  label: label,
+  label-pos: label-pos,
+  label-anchor: label-anchor,
 )
 
 /// Create a line plot with markers specification.
@@ -1465,6 +1921,95 @@
   let spec = (hline: y0, stroke: stroke)
   if xmin != auto { spec.insert("xmin", xmin) }
   if xmax != auto { spec.insert("xmax", xmax) }
+  spec
+}
+
+/// Add a spy/zoom inset: a magnified sub-view of a region of the main plot.
+///
+/// Specify the spy glass via `region` (explicit data-coord corners) OR via
+/// `center` + `size` (square on the canvas in cm, independent of axis aspect ratio).
+///
+/// - region: `(x1, y1, x2, y2)` in data coords — explicit spy glass corners
+/// - center: `(cx, cy)` in data coords — spy glass center (use with `size`)
+/// - size: spy glass size in cm (canvas units) — ensures a square spy glass
+/// - at: `(x, y)` data coords of inset center (`auto` = smart placement in opposite quadrant)
+/// - width: inset box width in cm (`auto` = from magnification or 3.5)
+/// - height: inset box height in cm (`auto` = from magnification or 3.5)
+/// - magnification: zoom factor — inset size = spy glass canvas size × factor
+/// - lens-shape: `"rect"` (default) or `"circle"`
+/// - connect: draw connector lines between spy glass and inset (default true)
+/// - accent: accent color for borders and region fill tint
+/// - region-fill: fill tint inside spy glass (default: light accent)
+/// - region-stroke: border stroke of the spy glass
+/// - box-stroke: border stroke of the inset box
+/// - box-fill: background fill of the inset (default white)
+/// - connector-stroke: stroke for connector lines (default: dashed gray)
+/// - connector-fill: fill for the trapezoid between connector lines (default none)
+/// - shadow: drop shadow behind the inset (default true)
+/// - show-inset-grid: subtle grid inside inset aligned to main ticks (default true)
+/// - show-magnification: show ×N label in inset corner (default false)
+/// - label: custom label inside inset (overrides auto ×N; `none` = hide)
+///
+/// Example — square spy glass, 4× magnification:
+/// ```typst
+/// #plot(xmin: -5, xmax: 5, ymin: -2, ymax: 2,
+///   (fn: x => calc.sin(x), stroke: blue + 1.2pt),
+///   zoom(center: (0, 0), size: 0.8, magnification: 4, at: (3, 1.5)),
+/// )
+/// ```
+#let zoom(
+  region: auto,
+  center: auto,
+  size: auto,
+  at: auto,
+  width: auto,
+  height: auto,
+  magnification: auto,
+  lens-shape: "rect",
+  connect: true,
+  accent: rgb("#4a90d9"),
+  region-fill: auto,
+  region-stroke: auto,
+  box-stroke: auto,
+  box-fill: white,
+  connector-stroke: auto,
+  connector-fill: none,
+  shadow: auto,
+  show-inset-grid: true,
+  show-magnification: false,
+  label: none,
+) = {
+  assert(region != auto or (center != auto and size != auto),
+    message: "zoom() requires either 'region: (x1,y1,x2,y2)' or both 'center' and 'size'")
+  // Store region placeholder (rendering overrides it when zoom-center+zoom-size-cm are present)
+  let eff-region = if region != auto {
+    region
+  } else {
+    let (cx, cy) = center
+    (cx, cy, cx, cy)  // placeholder — overridden in rendering by center+size-cm logic
+  }
+  let spec = (
+    zoom-region: eff-region,
+    at: at,
+    lens-shape: lens-shape,
+    connect: connect,
+    accent: accent,
+    connector-fill: connector-fill,
+    show-inset-grid: show-inset-grid,
+    show-magnification: show-magnification,
+    label: label,
+  )
+  if center != auto           { spec.insert("zoom-center", center) }
+  if size != auto             { spec.insert("zoom-size-cm", size) }
+  if width != auto            { spec.insert("zoom-width", width) }
+  if height != auto           { spec.insert("zoom-height", height) }
+  if magnification != auto    { spec.insert("magnification", magnification) }
+  if region-fill != auto      { spec.insert("region-fill", region-fill) }
+  if region-stroke != auto    { spec.insert("region-stroke", region-stroke) }
+  if box-stroke != auto       { spec.insert("box-stroke", box-stroke) }
+  if box-fill != none         { spec.insert("box-fill", box-fill) }
+  if connector-stroke != auto { spec.insert("connector-stroke", connector-stroke) }
+  if shadow != auto           { spec.insert("shadow", shadow) }
   spec
 }
 
