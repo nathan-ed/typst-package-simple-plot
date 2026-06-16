@@ -908,7 +908,7 @@ kept as a French alias.
   [`val`], [float/none], [none], [Defined value `f(a)` as a filled dot],
   [`a-label`], [content/auto], [auto], [Tick label at `a`; `auto` prints the value],
   [`show-limit`], [bool/float], [false], [Draw a dashed horizontal limit line; `true` auto-detects a common finite limit],
-  [`L-label`], [content/auto], [auto], [Label for the limit line],
+  [`l-label`], [content/auto], [auto], [Label for the limit line],
   [`width` / `height`], [float], [3.8 / 2.8], [Schema dimensions in cm],
 )
 
