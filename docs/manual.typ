@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.9.0": plot, plot-fn, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.9.0": plot, plot-fn, plot-rational, limit-schema, schema-lim, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, zoom, set-plot-defaults, reset-plot-defaults
 
 // =============================================================================
 // DOCUMENT SETUP
@@ -805,6 +805,113 @@ Plot a single function with automatic y-scaling:
   [`..args`], [any], [—], [Forwarded to `plot()`],
 )
 
+== `plot-rational` - Rational Function Wrapper
+
+`plot-rational` is a convenience wrapper for common rational-function exercise
+graphs. It draws a single function on a centered coordinate grid and forwards
+extra arguments to `plot`, so you can add horizontal asymptotes, holes, or
+labels. Pass vertical asymptotes with `vertical-asymptotes`; the function domain
+is split around those values to avoid sampling at the pole.
+
+```typst
+#plot-rational(
+  x => (x + 1) / (x - 2),
+  xmin: -5, xmax: 5,
+  ymin: -6, ymax: 6,
+  vertical-asymptotes: (2,),
+  hline(1, stroke: stroke(paint: red, thickness: 0.7pt, dash: "dashed")),
+)
+```
+
+#example(
+  [```typst
+#plot-rational(
+  x => (x + 1) / (x - 2),
+  xmin: -5, xmax: 5,
+  ymin: -6, ymax: 6,
+  vertical-asymptotes: (2,),
+  hline(1, stroke: stroke(paint: red, thickness: 0.7pt, dash: "dashed")),
+)
+  ```],
+  [
+    #plot-rational(
+      x => (x + 1) / (x - 2),
+      xmin: -5, xmax: 5,
+      ymin: -6, ymax: 6,
+      width: 5,
+      height: 4,
+      vertical-asymptotes: (2,),
+      hline(1, stroke: stroke(paint: red, thickness: 0.7pt, dash: "dashed")),
+    )
+  ]
+)
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`fn`], [function], [—], [Function to plot],
+  [`xmin` / `xmax`], [float], [-6 / 6], [X-axis bounds],
+  [`ymin` / `ymax`], [float], [-8 / 8], [Y-axis bounds],
+  [`stroke`], [stroke], [`blue + 1.2pt`], [Function stroke],
+  [`domain`], [array/auto], [auto], [Function domain; `auto` = `(xmin, xmax)`],
+  [`samples`], [int], [200], [Function sample count],
+  [`vertical-asymptotes`], [array], [()], [X-values to skip and draw as vertical dashed lines],
+  [`asymptote-stroke`], [stroke], [dashed gray], [Stroke for vertical asymptote lines],
+  [`asymptote-gap`], [float], [0.05], [Half-gap removed around each vertical asymptote],
+  [`width` / `height`], [float/auto], [auto], [Plot dimensions],
+  [`..args`], [any], [—], [Forwarded to `plot()`; positional args become extra series],
+)
+
+== `limit-schema` / `schema-lim` - Local Limit Sketches
+
+`limit-schema` draws a small schematic graph around a point `a`. It is useful
+for removable discontinuities, jumps, and vertical asymptotes. `schema-lim` is
+kept as a French alias.
+
+```typst
+#limit-schema(a: 1, left: 4, right: 4)
+#limit-schema(a: 2, left: "+oo", right: "-oo")
+#limit-schema(a: 0, left: -1, right: 1, val: 0)
+```
+
+#example(
+  [```typst
+#grid(columns: (1fr, 1fr, 1fr), gutter: 0.5em,
+  limit-schema(a: 1, left: 4, right: 4),
+  limit-schema(a: 2, left: "+oo", right: "-oo"),
+  limit-schema(a: 0, left: -1, right: 1, val: 0),
+)
+  ```],
+  [
+    #grid(columns: (1fr, 1fr, 1fr), gutter: 0.5em,
+      limit-schema(a: 1, left: 4, right: 4, width: 3.2, height: 2.4),
+      limit-schema(a: 2, left: "+oo", right: "-oo", width: 3.2, height: 2.4),
+      limit-schema(a: 0, left: -1, right: 1, val: 0, width: 3.2, height: 2.4),
+    )
+  ]
+)
+
+*Parameters:*
+
+#table(
+  columns: (1.2fr, 0.8fr, 1fr, 2fr),
+  stroke: (x: none, y: 0.3pt + luma(85%)),
+  inset: 6pt,
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`a`], [float], [0], [X-position of the local behavior],
+  [`left`], [float/string/none], [none], [Left-hand behavior: finite value, `"+oo"`, `"-oo"`, or none],
+  [`right`], [float/string/none], [none], [Right-hand behavior: finite value, `"+oo"`, `"-oo"`, or none],
+  [`val`], [float/none], [none], [Defined value `f(a)` as a filled dot],
+  [`a-label`], [content/auto], [auto], [Tick label at `a`; `auto` prints the value],
+  [`show-limit`], [bool/float], [false], [Draw a dashed horizontal limit line; `true` auto-detects a common finite limit],
+  [`L-label`], [content/auto], [auto], [Label for the limit line],
+  [`width` / `height`], [float], [3.8 / 2.8], [Schema dimensions in cm],
+)
+
 == `scatter` / `data` - Point Sets
 
 `scatter` and `data` are identical functions. Use them to create isolated point specifications. Set `connect: true` to join points with a line.
@@ -1593,6 +1700,82 @@ Each plot item is a dictionary with these fields:
   [`label-a` / `label-b`], [content], [`$a$` / `$b$`], [Labels at domain endpoints],
   [`label-f`], [content], [`$f$`], [Function label near the profile curve],
   [`label-y`], [content], [`$y$`], [Label for the coordinate y-axis],
+)
+
+#pagebreak()
+
+== `zoom` - Spy / zoom inset
+
+Add a magnified sub-view (spy glass) of any region of the main plot. The `zoom()` helper returns a series spec that is passed directly to `plot()`. It draws a highlighted region on the main plot and a zoomed inset box with connector lines.
+
+=== Basic Example
+
+#example-full(
+  [```typst
+#plot(
+  xmin: -4, xmax: 4, ymin: -2, ymax: 6,
+  show-grid: "major",
+  (fn: x => x * x, stroke: blue + 1.5pt),
+  zoom(center: (0, 0.1), size: 0.9, magnification: 4, at: "top-right"),
+)
+  ```],
+  [
+    #plot(
+      xmin: -4, xmax: 4, ymin: -2, ymax: 6,
+      show-grid: "major",
+      (fn: x => x * x, stroke: blue + 1.5pt),
+      zoom(center: (0, 0.1), size: 0.9, magnification: 4, at: "top-right"),
+    )
+  ]
+)
+
+=== Circular lens, explicit region
+
+#example-full(
+  [```typst
+#plot(
+  xmin: -5, xmax: 5, ymin: -2, ymax: 2,
+  (fn: x => calc.sin(x), stroke: blue + 1.5pt),
+  zoom(region: (-0.5, -0.6, 0.5, 0.6),
+       lens-shape: "circle", magnification: 5,
+       at: (3, 1.2), accent: red),
+)
+  ```],
+  [
+    #plot(
+      xmin: -5, xmax: 5, ymin: -2, ymax: 2,
+      (fn: x => calc.sin(x), stroke: blue + 1.5pt),
+      zoom(region: (-0.5, -0.6, 0.5, 0.6),
+           lens-shape: "circle", magnification: 5,
+           at: (3, 1.2), accent: red),
+    )
+  ]
+)
+
+=== Parameters
+
+#table(
+  columns: (auto, auto, auto, 1fr),
+  [*Parameter*], [*Type*], [*Default*], [*Description*],
+  [`region`], [array], [`auto`], [Spy glass corners `(x1, y1, x2, y2)` in data coords. Either `region` or `center` + `size` is required.],
+  [`center`], [array], [`auto`], [Spy glass center `(cx, cy)` in data coords (use with `size`)],
+  [`size`], [float], [`auto`], [Spy glass size in cm — ensures a square glass regardless of axis ratio],
+  [`at`], [array/str], [`auto`], [Inset box center: `(x,y)` data coords, or a placement keyword: `"top-right"`, `"top-left"`, `"bottom-right"`, `"bottom-left"`, `"top"`, `"bottom"`, `"left"`, `"right"`. `auto` = smart opposite-quadrant placement],
+  [`width` / `height`], [float], [`auto`], [Inset box size in cm. `auto` = derived from `magnification` or 3.5],
+  [`magnification`], [float], [`auto`], [Zoom factor — inset size = spy glass canvas size × factor],
+  [`lens-shape`], [str], [`"rect"`], [`"rect"` or `"circle"`],
+  [`connect`], [bool], [true], [Draw connector lines between spy glass and inset],
+  [`accent`], [color], [blue], [Accent color for borders and region highlight],
+  [`region-fill`], [color], [`auto`], [Fill tint inside the spy glass region],
+  [`region-stroke`], [stroke], [`auto`], [Border of the spy glass region],
+  [`box-fill`], [color], [white], [Background fill of the inset box],
+  [`box-stroke`], [stroke], [`auto`], [Border of the inset box],
+  [`connector-stroke`], [stroke], [`auto`], [Dashed gray connector lines by default],
+  [`connector-fill`], [color], [none], [Fill the trapezoid between connector lines],
+  [`shadow`], [bool], [`auto`], [Drop shadow behind the inset (default true for rect with fill)],
+  [`show-inset-grid`], [bool], [true], [Subtle grid inside the inset aligned to main ticks],
+  [`show-magnification`], [bool], [false], [Show ×N label in inset corner],
+  [`label`], [content], [none], [Custom label inside the inset (overrides the ×N label)],
 )
 
 #pagebreak()
