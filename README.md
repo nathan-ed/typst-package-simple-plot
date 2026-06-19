@@ -194,7 +194,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 | `ymin`, `ymax` | float | -5, 5 | Y-axis range |
 | `width`, `height` | float | 6, 6 | Plot size in cm |
 | `scale` | float | 1 | Scale factor for the entire plot |
-| `xlabel`, `ylabel` | content | `$x$`, `$y$` | Axis labels (default: tkz-fct style at arrow tips) |
+| `xlabel`, `ylabel` | content | `$x$`, `$y$` | Axis labels (tkz-fct style: tucked beside the arrow tips) |
 | `show-grid` | bool/str | false | `true`, `false`, `"major"`, `"minor"`, `"both"` |
 | `minor-grid-step` | int | 5 | Minor grid subdivisions per major tick |
 | `grid-label-break` | bool | true | Gap in grid lines around tick labels |
@@ -204,19 +204,23 @@ Control the placement of function labels using `label-pos` and `label-side`:
 | `axis-y-extend` | float/array | (0, 0.5) | Extend Y-axis beyond grid: value or `(bottom, top)` |
 | `show-origin` | bool | true | Show "0" label at origin |
 | `unit-label-only` | bool | false | Show only "1" on axes for minimal style |
+| `show-end-ticks` | bool | true | Keep the tick/label at `xmax`/`ymax` when it lands on a tick (e.g. show "5"), pushing the axis slightly past it so the arrow clears the label |
+| `font` | str/array | document font | Font applied to all generated text (tick labels, axis labels, origin, annotations) |
 
 ### Axis Label Placement
 
-Labels default to tkz-fct style: $x$ sits below-right of the arrowhead, $y$ sits to the left.
+Labels default to tkz-fct style: $x$ sits just above the axis a little left of the
+right arrow, $y$ sits just left of the axis a little below the top arrow. This keeps
+them clear of the tick numbers (which sit below / left of the axis).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `xlabel-pos` | str/array | `"end"` | `"end"`, `"center"`, or `(x, y)` in data coords |
 | `ylabel-pos` | str/array | `"end"` | same |
-| `xlabel-anchor` | str | `"north-west"` | CeTZ anchor — top-left of text at position |
-| `ylabel-anchor` | str | `"east"` | CeTZ anchor — right edge of text at position |
-| `xlabel-offset` | array | `(0.0, -0.03)` | Offset `(x, y)` in cm from arrow tip |
-| `ylabel-offset` | array | `(-0.05, 0.0)` | Offset `(x, y)` in cm from arrow tip |
+| `xlabel-anchor` | str/auto | `auto` | CeTZ anchor; `auto` → `"south-east"` at the right arrow tip |
+| `ylabel-anchor` | str/auto | `auto` | CeTZ anchor; `auto` → `"north-east"` at the top arrow tip |
+| `xlabel-offset` | array | `(-0.05, 0.08)` | Offset `(x, y)` in cm from arrow tip |
+| `ylabel-offset` | array | `(-0.08, -0.05)` | Offset `(x, y)` in cm from arrow tip |
 
 ### Tick Configuration
 

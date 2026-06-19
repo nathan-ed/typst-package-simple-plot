@@ -369,6 +369,11 @@
 /// - origin-leader-end-gap (auto, float): Gap before the label anchor, in cm (default: 0.025)
 /// - tick-label-size (auto, length): Font size for tick labels (default: 0.65em)
 /// - axis-label-size (auto, length): Font size for axis labels x/y (default: 0.8em)
+/// - font (auto, str, array): Font applied to every text the plot generates
+///   (tick labels, axis labels, origin, annotations). Default: document font.
+/// - show-end-ticks (auto, bool): When the max value lands on a tick, keep that
+///   tick/label (e.g. xmax = 5 shows "5") and push the axis slightly past it so
+///   the arrow clears the label (default: true)
 /// - style (none, dictionary): Style overrides
 /// - ..functions: Function/data specifications to plot
 #let plot(
@@ -412,6 +417,8 @@
   origin-leader-end-gap: auto,
   tick-label-size: auto,
   axis-label-size: auto,
+  font: auto,
+  show-end-ticks: auto,
   style: none,
   series: none,
   ..functions,
@@ -437,10 +444,10 @@
   let ylabel = resolve(ylabel, "ylabel", $y$)
   let xlabel-pos = resolve(xlabel-pos, "xlabel-pos", "end")
   let ylabel-pos = resolve(ylabel-pos, "ylabel-pos", "end")
-  let xlabel-anchor = resolve(xlabel-anchor, "xlabel-anchor", "north")
-  let ylabel-anchor = resolve(ylabel-anchor, "ylabel-anchor", "east")
-  let xlabel-offset = resolve(xlabel-offset, "xlabel-offset", (0.0, -0.05))
-  let ylabel-offset = resolve(ylabel-offset, "ylabel-offset", (-0.05, 0.0))
+  let xlabel-anchor = resolve(xlabel-anchor, "xlabel-anchor", auto)
+  let ylabel-anchor = resolve(ylabel-anchor, "ylabel-anchor", auto)
+  let xlabel-offset = resolve(xlabel-offset, "xlabel-offset", (-0.05, 0.08))
+  let ylabel-offset = resolve(ylabel-offset, "ylabel-offset", (-0.08, -0.05))
   let xtick = resolve(xtick, "xtick", auto)
   let ytick = resolve(ytick, "ytick", auto)
   let xtick-step = resolve(xtick-step, "xtick-step", auto)
@@ -466,6 +473,12 @@
   let origin-leader-end-gap = resolve(origin-leader-end-gap, "origin-leader-end-gap", auto)
   let tick-label-size = resolve(tick-label-size, "tick-label-size", auto)
   let axis-label-size = resolve(axis-label-size, "axis-label-size", auto)
+  let font = resolve(font, "font", auto)
+  let show-end-ticks = resolve(show-end-ticks, "show-end-ticks", true)
+
+  // Apply a single font to every piece of text the plot generates
+  // (tick labels, axis labels, origin label, annotations, ...).
+  let apply-font(body) = if font == auto { body } else { text(font: font, body) }
 
   // Normalize extend values to (left/bottom, right/top) tuples
   let x-extend = if type(axis-x-extend) == array { axis-x-extend } else { (axis-x-extend, axis-x-extend) }
@@ -522,6 +535,15 @@
   let y-ticks = if ytick == none { (ticks: (), step: 1) }
                 else if ytick == auto { generate-ticks(ymin, ymax, step: ytick-step) }
                 else { (ticks: ytick, step: if ytick.len() > 1 { ytick.at(1) - ytick.at(0) } else { 1 }) }
+
+  // When the max value lands exactly on a tick, keep that tick/label instead of
+  // hiding it under the axis arrow, and make sure the axis is pushed a little
+  // past it (e.g. xmax = 5 → axis to 5.2) so the arrow clears the label.
+  let end-tick-overshoot = 0.2
+  let xmax-on-tick = show-end-ticks and x-ticks.ticks.any(t => calc.abs(t - xmax) < 0.0001)
+  let ymax-on-tick = show-end-ticks and y-ticks.ticks.any(t => calc.abs(t - ymax) < 0.0001)
+  if xmax-on-tick { x-extend.at(1) = calc.max(x-extend.at(1), end-tick-overshoot) }
+  if ymax-on-tick { y-extend.at(1) = calc.max(y-extend.at(1), end-tick-overshoot) }
 
   cetz.canvas(length: 1cm, {
     // Save Typst's native `line` before cetz shadows it — needed for pattern() fills
@@ -637,7 +659,7 @@
 
       // X-axis tick labels (below axis, anchor "north")
       for x in x-ticks.ticks {
-        if x-has-label(x) and calc.abs(x - xmax) > 0.0001 {
+        if x-has-label(x) and (xmax-on-tick or calc.abs(x - xmax) > 0.0001) {
           let cx = (x - xmin) * x-scale
           let text-width = calc-text-width(x)
           let anchor-x = cx
@@ -654,7 +676,7 @@
 
       // Y-axis tick labels (left of axis, anchor "east")
       for y in y-ticks.ticks {
-        if y-has-label(y) and calc.abs(y - ymax) > 0.0001 {
+        if y-has-label(y) and (ymax-on-tick or calc.abs(y - ymax) > 0.0001) {
           let cy = (y - ymin) * y-scale
           let text-width = calc-text-width(y)
           let anchor-x = x-ax-canvas - tick-len - label-offset
@@ -833,8 +855,8 @@
 
       // Ticks and labels (tick-len already defined above)
       for (i, x) in x-ticks.ticks.enumerate() {
-        // Skip tick at xmax (where arrow is)
-        if calc.abs(x - xmax) < 0.0001 { continue }
+        // Skip tick at xmax (where arrow is), unless we keep the end tick
+        if calc.abs(x - xmax) < 0.0001 and not xmax-on-tick { continue }
         let (cx, cy) = to-canvas(x, x-axis-y)
         line((cx, cy - tick-len), (cx, cy + tick-len), stroke: s.ticks.stroke)
         // Only show label if x is a multiple of (tick-step * label-step)
@@ -856,14 +878,14 @@
                              else { label != "" and label != "0" }
           if render-label {
             content((cx, cy - tick-len - label-offset),
-                    text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label], anchor: "north")
+                    apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label]), anchor: "north")
           }
         }
       }
 
       for (i, y) in y-ticks.ticks.enumerate() {
-        // Skip tick at ymax (where arrow is)
-        if calc.abs(y - ymax) < 0.0001 { continue }
+        // Skip tick at ymax (where arrow is), unless we keep the end tick
+        if calc.abs(y - ymax) < 0.0001 and not ymax-on-tick { continue }
         let (cx, cy) = to-canvas(y-axis-x, y)
         line((cx - tick-len, cy), (cx + tick-len, cy), stroke: s.ticks.stroke)
         // Only show label if y is a multiple of (tick-step * label-step)
@@ -885,7 +907,7 @@
                              else { label != "" and label != "0" }
           if render-label {
             content((cx - tick-len - label-offset, cy),
-                    text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label], anchor: "east")
+                    apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label]), anchor: "east")
           }
         }
       }
@@ -907,32 +929,45 @@
             )
           }
         }
-        content(label-pos, text(size: s.ticks.label-size, fill: s.ticks.label-fill)[0], anchor: s.origin.label-anchor)
+        content(label-pos, apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[0]), anchor: s.origin.label-anchor)
       }
 
-      // Axis labels - positioned at the extended arrow tips
+      // Axis labels.
+      // Default convention (xlabel-pos / ylabel-pos == "end"):
+      //   x  → just above the axis, a little left of the right arrow (anchor SE)
+      //   y  → just left of the axis, a little below the top arrow (anchor NE)
+      // This keeps the labels clear of the tick numbers (which sit below / left
+      // of the axis), including the end tick at xmax / ymax.
       if xlabel != none {
-        let (lx, ly) = if xlabel-pos == "end" {
-          // Position just before the extended arrow tip so labels stay inside tight panels.
+        let (lx, ly, default-anchor) = if xlabel-pos == "end" {
           let (base-x, base-y) = to-canvas(xmax, x-axis-y)
-          (base-x + x-extend.at(1) * x-scale - 0.18, base-y)
-        } else if xlabel-pos == "center" { to-canvas((xmin + xmax) / 2, x-axis-y) }
-          else if type(xlabel-pos) == array { to-canvas(xlabel-pos.at(0), xlabel-pos.at(1)) }
-          else { to-canvas(xmax, x-axis-y) }
+          (base-x + x-extend.at(1) * x-scale, base-y, "south-east")
+        } else if xlabel-pos == "center" {
+          let (cx, cy) = to-canvas((xmin + xmax) / 2, x-axis-y); (cx, cy, "north")
+        } else if type(xlabel-pos) == array {
+          let (cx, cy) = to-canvas(xlabel-pos.at(0), xlabel-pos.at(1)); (cx, cy, "north")
+        } else {
+          let (cx, cy) = to-canvas(xmax, x-axis-y); (cx, cy, "north")
+        }
+        let x-lbl-anchor = if xlabel-anchor == auto { default-anchor } else { xlabel-anchor }
         let (ox, oy) = xlabel-offset
-        content((lx + ox, ly + oy), text(size: s.labels.size, fill: s.labels.fill)[#xlabel], anchor: xlabel-anchor)
+        content((lx + ox, ly + oy), apply-font(text(size: s.labels.size, fill: s.labels.fill)[#xlabel]), anchor: x-lbl-anchor)
       }
 
       if ylabel != none {
-        let (lx, ly) = if ylabel-pos == "end" {
-          // Position just below the extended arrow tip so labels stay inside tight panels.
+        let (lx, ly, default-anchor) = if ylabel-pos == "end" {
           let (base-x, base-y) = to-canvas(y-axis-x, ymax)
-          (base-x, base-y + y-extend.at(1) * y-scale - 0.18)
-        } else if ylabel-pos == "center" { to-canvas(y-axis-x, (ymin + ymax) / 2) }
-          else if type(ylabel-pos) == array { to-canvas(ylabel-pos.at(0), ylabel-pos.at(1)) }
-          else { to-canvas(y-axis-x, ymax) }
+          (base-x, base-y + y-extend.at(1) * y-scale, "north-east")
+        } else if ylabel-pos == "center" {
+          let (cx, cy) = to-canvas(y-axis-x, (ymin + ymax) / 2); (cx, cy, "east")
+        } else if type(ylabel-pos) == array {
+          let (cx, cy) = to-canvas(ylabel-pos.at(0), ylabel-pos.at(1)); (cx, cy, "east")
+        } else {
+          let (cx, cy) = to-canvas(y-axis-x, ymax); (cx, cy, "east")
+        }
+        let y-lbl-anchor = if ylabel-anchor == auto { default-anchor } else { ylabel-anchor }
         let (ox, oy) = ylabel-offset
-        content((lx + ox, ly + oy), text(size: s.labels.size, fill: s.labels.fill)[#ylabel], anchor: ylabel-anchor)
+        content((lx + ox, ly + oy), apply-font(text(size: s.labels.size, fill: s.labels.fill)[#ylabel]), anchor: y-lbl-anchor)
       }
     }
 
@@ -1033,7 +1068,7 @@
           let ly = fn(lx)
           if ly != none and not float(ly).is-nan() and ly >= y-clip-min and ly <= y-clip-max {
             let (cx, cy) = to-canvas(lx, ly)
-            content((cx, cy), label, anchor: label-anchor)
+            content((cx, cy), apply-font(label), anchor: label-anchor)
           }
         }
 
@@ -1057,7 +1092,7 @@
           let label-anchor = if label-side != none { side-to-anchor(label-side) } else { func-spec.at("label-anchor", default: "south-west") }
           let idx = calc.min(int(canvas-points.len() * label-pos), canvas-points.len() - 1)
           let (cx, cy) = canvas-points.at(idx)
-          content((cx, cy), label, anchor: label-anchor)
+          content((cx, cy), apply-font(label), anchor: label-anchor)
         }
 
       // ── Fill below a single function to a baseline ─────────────────────
@@ -1150,7 +1185,7 @@
         let ann-size   = func-spec.at("size", default: 10pt)
         let (ax, ay)   = ann-pos
         let (cx, cy)   = to-canvas(ax, ay)
-        content((cx, cy), text(ann-text, size: ann-size), anchor: ann-anchor)
+        content((cx, cy), apply-font(text(ann-text, size: ann-size)), anchor: ann-anchor)
 
       // ── Riemann sum rectangles ───────────────────────────────────────────
       // Keys: riemann:fn, domain:(a,b), n:int, method:"left"|"right"|"mid",
@@ -1263,7 +1298,7 @@
             }
             // Always shift right when xi label lands on the y-axis to avoid overlap
             let x-shift = if calc.abs(x - y-axis-x) < 0.001 { 0.35 } else { 0.0 }
-            content((cx + x-shift, cy - 0.20), lbl, anchor: "north")
+            content((cx + x-shift, cy - 0.20), apply-font(lbl), anchor: "north")
           }
         }
 
@@ -1292,7 +1327,7 @@
                    mark: (end: (symbol: "stealth", fill: black, scale: 0.35)),
                    stroke: black + 0.5pt)
             }
-            content((lx, ly), lbl-text, anchor: "center")
+            content((lx, ly), apply-font(lbl-text), anchor: "center")
           }
           // Dots on top
           for (px, py) in eval-pts {
@@ -1687,7 +1722,7 @@
         text(size: 7pt, fill: accent-col)[×#mag-v]
       } else { none }
       if eff-lbl != none {
-        content((bx1 + 0.12, by2 - 0.06), eff-lbl, anchor: "north-west")
+        content((bx1 + 0.12, by2 - 0.06), apply-font(eff-lbl), anchor: "north-west")
       }
     }
   })
