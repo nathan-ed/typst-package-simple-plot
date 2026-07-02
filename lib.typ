@@ -78,6 +78,9 @@
     label-offset: 0.15,
     label-size: 10pt,
     label-fill: black,
+    // Painted behind tick labels so a curve crossing the label band stays
+    // behind clean digits (labels are drawn after the plot series).
+    label-bg: white,
   ),
   origin: (
     label-offset: (-0.11, -0.11),
@@ -100,6 +103,9 @@
     size: 10pt,
     fill: black,
     offset: 0.3,
+    // Same background trick as tick labels: keeps the x/y axis names legible
+    // when a curve passes under them.
+    bg: white,
   ),
   xlabel-style: (
     anchor: "west",
@@ -244,12 +250,28 @@
   }
 }
 
-// Generate ticks with step=1 by default, starting on integers
-#let generate-ticks(min, max, step: auto, count: auto) = {
+// Smallest "nice" step (1, 2 or 5 times a power of ten) >= needed
+#let nice-step(needed) = {
+  let k = calc.floor(calc.log(calc.max(needed, 1e-9), base: 10))
+  let result = 10 * calc.pow(10.0, k)
+  for mult in (1, 2, 5) {
+    let step = mult * calc.pow(10.0, k)
+    if step >= needed - 1e-9 { result = step; break }
+  }
+  result
+}
+
+// Generate ticks starting on integers. With step auto, defaults to 1 but
+// widens to the next nice step (2, 5, 10, ...) when the canvas scale would
+// place ticks closer than min-spacing (cm) apart — keeps labels readable on
+// large ranges (e.g. y from -80 to 30 on a 5 cm axis).
+#let generate-ticks(min, max, step: auto, count: auto, scale: none, min-spacing: 0.4) = {
   let actual-step = if step != auto {
     step
   } else if count != auto {
     (max - min) / count
+  } else if scale != none {
+    calc.max(1, nice-step(min-spacing / scale))
   } else {
     // Default to step=1 for clean integer ticks
     1
@@ -419,6 +441,8 @@
   axis-label-size: auto,
   font: auto,
   show-end-ticks: auto,
+  min-tick-spacing: auto,
+  hide-crossed-tick-labels: auto,
   style: none,
   series: none,
   ..functions,
@@ -447,7 +471,7 @@
   let xlabel-anchor = resolve(xlabel-anchor, "xlabel-anchor", auto)
   let ylabel-anchor = resolve(ylabel-anchor, "ylabel-anchor", auto)
   let xlabel-offset = resolve(xlabel-offset, "xlabel-offset", (-0.05, 0.08))
-  let ylabel-offset = resolve(ylabel-offset, "ylabel-offset", (-0.08, -0.05))
+  let ylabel-offset = resolve(ylabel-offset, "ylabel-offset", (0.08, -0.05))
   let xtick = resolve(xtick, "xtick", auto)
   let ytick = resolve(ytick, "ytick", auto)
   let xtick-step = resolve(xtick-step, "xtick-step", auto)
@@ -475,6 +499,8 @@
   let axis-label-size = resolve(axis-label-size, "axis-label-size", auto)
   let font = resolve(font, "font", auto)
   let show-end-ticks = resolve(show-end-ticks, "show-end-ticks", true)
+  let min-tick-spacing = resolve(min-tick-spacing, "min-tick-spacing", 0.4)
+  let hide-crossed-tick-labels = resolve(hide-crossed-tick-labels, "hide-crossed-tick-labels", true)
 
   // Apply a single font to every piece of text the plot generates
   // (tick labels, axis labels, origin label, annotations, ...).
@@ -529,11 +555,11 @@
                  else { calc.max(xmin, calc.min(xmax, axis-y-pos)) }
 
   let x-ticks = if xtick == none { (ticks: (), step: 1) }
-                else if xtick == auto { generate-ticks(xmin, xmax, step: xtick-step) }
+                else if xtick == auto { generate-ticks(xmin, xmax, step: xtick-step, scale: x-scale, min-spacing: min-tick-spacing) }
                 else { (ticks: xtick, step: if xtick.len() > 1 { xtick.at(1) - xtick.at(0) } else { 1 }) }
 
   let y-ticks = if ytick == none { (ticks: (), step: 1) }
-                else if ytick == auto { generate-ticks(ymin, ymax, step: ytick-step) }
+                else if ytick == auto { generate-ticks(ymin, ymax, step: ytick-step, scale: y-scale, min-spacing: min-tick-spacing) }
                 else { (ticks: ytick, step: if ytick.len() > 1 { ytick.at(1) - ytick.at(0) } else { 1 }) }
 
   // When the max value lands exactly on a tick, keep that tick/label instead of
@@ -630,6 +656,165 @@
       at-interval
     }
 
+    // Extended bounds for clipping area
+    let x-clip-min = xmin - x-extend.at(0)
+    let x-clip-max = xmax + x-extend.at(1)
+    let y-clip-min = ymin - y-extend.at(0)
+    let y-clip-max = ymax + y-extend.at(1)
+
+    // Sampling bounds (extend further so lines reach clip edges)
+    let sample-margin = calc.max(xmax - xmin, ymax - ymin) * 0.5
+    let x-plot-min = x-clip-min - sample-margin
+    let x-plot-max = x-clip-max + sample-margin
+    let y-plot-min = y-clip-min - sample-margin
+    let y-plot-max = y-clip-max + sample-margin
+
+    // Clip bounds in canvas coordinates
+    let clip-x1 = grid-x-start
+    let clip-y1 = grid-y-start
+    let clip-x2 = grid-x-end
+    let clip-y2 = grid-y-end
+
+    // Merge series: array with positional functions
+    let all-funcs = if series != none { series + functions.pos() } else { functions.pos() }
+
+    // Separate zoom inset specs — rendered after axes
+    let is-zoom-spec(f) = type(f) == dictionary and "zoom-region" in f
+    let zoom-specs = all-funcs.filter(is-zoom-spec)
+    let all-funcs = all-funcs.filter(f => not is-zoom-spec(f))
+
+    // ── Shared label-geometry helpers ──────────────────────────────────────
+    // Estimated tick-label boxes (char-count heuristic, canvas units) and
+    // segment/box hit tests, used by the grid label breaks, the crossed-label
+    // hiding below, and the automatic function-label placement.
+    let est-char-w = 0.17
+    let est-char-h = 0.30
+    let est-width(val) = {
+      let t = format-number(val)
+      if val < 0 { 0.10 + (t.len() - 1) * est-char-w } else { t.len() * est-char-w }
+    }
+    let boxes-overlap(a, b) = {
+      a.at(0) < b.at(2) and a.at(2) > b.at(0) and a.at(1) < b.at(3) and a.at(3) > b.at(1)
+    }
+    let seg-hits-box(p1, p2, b) = {
+      let (bx1, by1, bx2, by2) = b
+      if calc.max(p1.at(0), p2.at(0)) < bx1 or calc.min(p1.at(0), p2.at(0)) > bx2 { return false }
+      if calc.max(p1.at(1), p2.at(1)) < by1 or calc.min(p1.at(1), p2.at(1)) > by2 { return false }
+      clip-segment(p1, p2, bx1, by1, bx2, by2) != none
+    }
+    let x-tick-label-box(x) = {
+      let (cx, cy) = to-canvas(x, x-axis-y)
+      let top = cy - tick-len - label-offset
+      let w = est-width(x)
+      (cx - w / 2, top - est-char-h, cx + w / 2, top)
+    }
+    let y-tick-label-box(y) = {
+      let (cx, cy) = to-canvas(y-axis-x, y)
+      let right = cx - tick-len - label-offset
+      let w = est-width(y)
+      (right - w, cy - est-char-h / 2, right, cy + est-char-h / 2)
+    }
+    let origin-label-box() = {
+      let (ox, oy) = to-canvas(0, 0)
+      let (dx0, dy0) = s.origin.label-offset
+      (ox + dx0 - est-char-w, oy + dy0 - est-char-h, ox + dx0, oy + dy0)
+    }
+
+    // ── Pre-sampled curve polylines ────────────────────────────────────────
+    // Low-resolution sampling of every series, done before anything is drawn:
+    // fn-curve segments decide which tick labels a curve crosses, and together
+    // with guide polylines (points series) they are the obstacles for the
+    // automatic function-label placement.
+    let fn-obstacle-segs = ()
+    let guide-obstacle-segs = ()
+    for func-spec in all-funcs {
+      if type(func-spec) != dictionary { continue }
+      if "zoom-region" in func-spec or "zoom-center" in func-spec { continue }
+      let fn = func-spec.at("fn", default: none)
+      let data-points = func-spec.at("points", default: none)
+      if fn != none {
+        let domain = func-spec.at("domain", default: none)
+        let dmin = if domain == none { x-plot-min } else { domain.at(0) }
+        let dmax = if domain == none { x-plot-max } else { domain.at(1) }
+        let n = 60
+        let step = (dmax - dmin) / n
+        let prev = none
+        // Midpoint sampling: never evaluates the domain endpoints, which are
+        // often poles (fn would divide by zero exactly there).
+        for i in range(n) {
+          let x = dmin + (i + 0.5) * step
+          let y = fn(x)
+          if y == none or float(y).is-nan() { prev = none; continue }
+          let p = to-canvas(x, y)
+          if prev != none { fn-obstacle-segs.push((prev, p)) }
+          prev = p
+        }
+      } else if data-points != none and func-spec.at("connect", default: true) {
+        let prev = none
+        for pt in data-points {
+          let p = to-canvas(pt.at(0), pt.at(1))
+          if prev != none { guide-obstacle-segs.push((prev, p)) }
+          prev = p
+        }
+      }
+    }
+    let obstacle-segs = fn-obstacle-segs + guide-obstacle-segs
+
+    // ── Hide tick labels crossed by a function graph ───────────────────────
+    // A tick value whose label box is crossed by a plotted curve is not
+    // rendered — unless hiding it would leave the axis with no label at all,
+    // in which case the least-crossed one is kept as the scale indicator.
+    // Guide polylines (points series, e.g. dashed asymptotes) do not hide
+    // labels: a label under a vertical asymptote locates it and stays.
+    let hidden-x = ()
+    let hidden-y = ()
+    let origin-hidden = false
+    if hide-crossed-tick-labels and fn-obstacle-segs.len() > 0 {
+      let crossing-count(b) = {
+        let hits = 0
+        for (p1, p2) in fn-obstacle-segs {
+          if seg-hits-box(p1, p2, b) {
+            hits += 1
+            if hits >= 8 { break }
+          }
+        }
+        hits
+      }
+      let hide-set(ticks, has-label, on-tick-max, val-max, box-of) = {
+        let infos = ()
+        for v in ticks {
+          if not has-label(v) { continue }
+          if calc.abs(v - val-max) < 0.0001 and not on-tick-max { continue }
+          infos.push((v: v, hits: crossing-count(box-of(v))))
+        }
+        let clean = infos.filter(i => i.hits == 0)
+        if clean.len() > 0 {
+          infos.filter(i => i.hits > 0).map(i => i.v)
+        } else if infos.len() > 1 {
+          // All crossed: keep the first non-zero label (smallest |value|,
+          // positive preferred) — the unit tick reads as the scale indicator;
+          // its white background keeps it legible under the curve.
+          let keep = infos.sorted(key: i => (calc.abs(i.v), if i.v < 0 { 1 } else { 0 })).first().v
+          infos.filter(i => calc.abs(i.v - keep) > 0.0001).map(i => i.v)
+        } else { () }
+      }
+      if xtick-labels == auto {
+        hidden-x = hide-set(x-ticks.ticks, x-has-label, xmax-on-tick, xmax, x-tick-label-box)
+      }
+      if ytick-labels == auto {
+        hidden-y = hide-set(y-ticks.ticks, y-has-label, ymax-on-tick, ymax, y-tick-label-box)
+      }
+      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+        let others = (x-ticks.ticks.filter(v => x-has-label(v)).len() - hidden-x.len()
+          + y-ticks.ticks.filter(v => y-has-label(v)).len() - hidden-y.len())
+        if others > 0 and crossing-count(origin-label-box()) > 0 {
+          origin-hidden = true
+        }
+      }
+    }
+    let is-hidden-x(x) = hidden-x.any(v => calc.abs(v - x) < 0.0001)
+    let is-hidden-y(y) = hidden-y.any(v => calc.abs(v - y) < 0.0001)
+
     // Pre-compute label exclusion zones for gap-based grid-label-break
     // Instead of drawing full grid lines and overlaying white rectangles,
     // we draw grid lines with gaps where labels are placed.
@@ -659,7 +844,7 @@
 
       // X-axis tick labels (below axis, anchor "north")
       for x in x-ticks.ticks {
-        if x-has-label(x) and (xmax-on-tick or calc.abs(x - xmax) > 0.0001) {
+        if x-has-label(x) and not is-hidden-x(x) and (xmax-on-tick or calc.abs(x - xmax) > 0.0001) {
           let cx = (x - xmin) * x-scale
           let text-width = calc-text-width(x)
           let anchor-x = cx
@@ -676,7 +861,7 @@
 
       // Y-axis tick labels (left of axis, anchor "east")
       for y in y-ticks.ticks {
-        if y-has-label(y) and (ymax-on-tick or calc.abs(y - ymax) > 0.0001) {
+        if y-has-label(y) and not is-hidden-y(y) and (ymax-on-tick or calc.abs(y - ymax) > 0.0001) {
           let cy = (y - ymin) * y-scale
           let text-width = calc-text-width(y)
           let anchor-x = x-ax-canvas - tick-len - label-offset
@@ -692,7 +877,7 @@
       }
 
       // Origin label zone (anchor "north-east", text extends down and left)
-      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+      if show-origin and not origin-hidden and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
         let (ox, oy) = to-canvas(0, 0)
         let anchor-x = ox - tick-len - 0.05
         let anchor-y = oy - tick-len - 0.05
@@ -853,6 +1038,36 @@
       let y2-ext = y2 + y-extend.at(1) * y-scale
       line((x-ax, y1-ext), (x-ax, y2-ext), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
 
+      // Tick label rendering: optional background so curves crossing the
+      // label band stay behind clean digits.
+      let tick-text(label) = {
+        let t = apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label])
+        let bg = s.ticks.at("label-bg", default: white)
+        if bg != none { box(fill: bg, inset: (x: 1pt, y: 0.5pt), t) } else { t }
+      }
+      let axis-label-text(label) = {
+        let t = apply-font(text(size: s.labels.size, fill: s.labels.fill)[#label])
+        let bg = s.labels.at("bg", default: white)
+        if bg != none { box(fill: bg, inset: 0.5pt, t) } else { t }
+      }
+
+      // Estimated boxes of the drawn x tick labels (and origin label), used to
+      // drop y tick labels that would collide with them near the origin when
+      // both axes are internal and scales are tight.
+      let x-label-boxes = ()
+      if xtick-labels == auto {
+        for x in x-ticks.ticks {
+          if calc.abs(x - xmax) < 0.0001 and not xmax-on-tick { continue }
+          if not x-has-label(x) or is-hidden-x(x) { continue }
+          let (bx1, by1, bx2, by2) = x-tick-label-box(x)
+          x-label-boxes.push((bx1, bx2, by1, by2))
+        }
+      }
+      if show-origin and not origin-hidden and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+        let (bx1, by1, bx2, by2) = origin-label-box()
+        x-label-boxes.push((bx1, bx2, by1, by2))
+      }
+
       // Ticks and labels (tick-len already defined above)
       for (i, x) in x-ticks.ticks.enumerate() {
         // Skip tick at xmax (where arrow is), unless we keep the end tick
@@ -860,8 +1075,10 @@
         let (cx, cy) = to-canvas(x, x-axis-y)
         line((cx, cy - tick-len), (cx, cy + tick-len), stroke: s.ticks.stroke)
         // Only show label if x is a multiple of (tick-step * label-step)
+        // When xtick-labels is an explicit array, show by index without modulo filtering
         let label-interval = x-ticks.step * xtick-label-step
-        let show-this-label = calc.abs(calc.rem(x, label-interval)) < 0.0001 or calc.abs(calc.rem(x, label-interval) - label-interval) < 0.0001
+        let show-this-label = if type(xtick-labels) == array { true }
+                              else { calc.abs(calc.rem(x, label-interval)) < 0.0001 or calc.abs(calc.rem(x, label-interval) - label-interval) < 0.0001 }
         // If unit-label-only, only show label for x = 1 (not -1 or other values)
         if unit-label-only and calc.abs(x - 1) > 0.0001 {
           show-this-label = false
@@ -870,6 +1087,8 @@
         if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 and calc.abs(x) < 0.0001 {
           show-this-label = false
         }
+        // Hidden: label box is crossed by a plotted curve.
+        if is-hidden-x(x) { show-this-label = false }
         if show-this-label and xtick-labels != none {
           let label = if xtick-labels == auto { format-number(x) }
                       else if i < xtick-labels.len() { xtick-labels.at(i) }
@@ -878,7 +1097,7 @@
                              else { label != "" and label != "0" }
           if render-label {
             content((cx, cy - tick-len - label-offset),
-                    apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label]), anchor: "north")
+                    tick-text(label), anchor: "north")
           }
         }
       }
@@ -889,8 +1108,10 @@
         let (cx, cy) = to-canvas(y-axis-x, y)
         line((cx - tick-len, cy), (cx + tick-len, cy), stroke: s.ticks.stroke)
         // Only show label if y is a multiple of (tick-step * label-step)
+        // When ytick-labels is an explicit array, show by index without modulo filtering
         let label-interval = y-ticks.step * ytick-label-step
-        let show-this-label = calc.abs(calc.rem(y, label-interval)) < 0.0001 or calc.abs(calc.rem(y, label-interval) - label-interval) < 0.0001
+        let show-this-label = if type(ytick-labels) == array { true }
+                              else { calc.abs(calc.rem(y, label-interval)) < 0.0001 or calc.abs(calc.rem(y, label-interval) - label-interval) < 0.0001 }
         // If unit-label-only, only show label for y = 1 (not -1 or other values)
         if unit-label-only and calc.abs(y - 1) > 0.0001 {
           show-this-label = false
@@ -899,6 +1120,8 @@
         if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 and calc.abs(y) < 0.0001 {
           show-this-label = false
         }
+        // Hidden: label box is crossed by a plotted curve.
+        if is-hidden-y(y) { show-this-label = false }
         if show-this-label and ytick-labels != none {
           let label = if ytick-labels == auto { format-number(y) }
                       else if i < ytick-labels.len() { ytick-labels.at(i) }
@@ -906,14 +1129,25 @@
           let render-label = if type(label) == content { true }
                              else { label != "" and label != "0" }
           if render-label {
-            content((cx - tick-len - label-offset, cy),
-                    apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label]), anchor: "east")
+            // Skip a y label whose estimated box would collide with an x tick
+            // label (happens near the origin with tight scales and centered axes).
+            let w = est-width(y)
+            let (x1, x2b) = (cx - tick-len - label-offset - w, cx - tick-len - label-offset)
+            let (yb1, yb2) = (cy - est-char-h / 2, cy + est-char-h / 2)
+            let collides = ytick-labels == auto and x-label-boxes.any(b => {
+              let (bx1, bx2, by1, by2) = b
+              x1 < bx2 and x2b > bx1 and yb1 < by2 and yb2 > by1
+            })
+            if not collides {
+              content((cx - tick-len - label-offset, cy),
+                      tick-text(label), anchor: "east")
+            }
           }
         }
       }
 
       // Origin label
-      if show-origin and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+      if show-origin and not origin-hidden and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
         let (ox, oy) = to-canvas(0, 0)
         let (dx, dy) = s.origin.label-offset
         let label-pos = (ox + dx, oy + dy)
@@ -929,7 +1163,7 @@
             )
           }
         }
-        content(label-pos, apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[0]), anchor: s.origin.label-anchor)
+        content(label-pos, tick-text([0]), anchor: s.origin.label-anchor)
       }
 
       // Axis labels.
@@ -951,13 +1185,13 @@
         }
         let x-lbl-anchor = if xlabel-anchor == auto { default-anchor } else { xlabel-anchor }
         let (ox, oy) = xlabel-offset
-        content((lx + ox, ly + oy), apply-font(text(size: s.labels.size, fill: s.labels.fill)[#xlabel]), anchor: x-lbl-anchor)
+        content((lx + ox, ly + oy), axis-label-text(xlabel), anchor: x-lbl-anchor)
       }
 
       if ylabel != none {
         let (lx, ly, default-anchor) = if ylabel-pos == "end" {
           let (base-x, base-y) = to-canvas(y-axis-x, ymax)
-          (base-x, base-y + y-extend.at(1) * y-scale, "north-east")
+          (base-x, base-y + y-extend.at(1) * y-scale, "north-west")
         } else if ylabel-pos == "center" {
           let (cx, cy) = to-canvas(y-axis-x, (ymin + ymax) / 2); (cx, cy, "east")
         } else if type(ylabel-pos) == array {
@@ -967,40 +1201,33 @@
         }
         let y-lbl-anchor = if ylabel-anchor == auto { default-anchor } else { ylabel-anchor }
         let (ox, oy) = ylabel-offset
-        content((lx + ox, ly + oy), apply-font(text(size: s.labels.size, fill: s.labels.fill)[#ylabel]), anchor: y-lbl-anchor)
+        content((lx + ox, ly + oy), axis-label-text(ylabel), anchor: y-lbl-anchor)
       }
     }
 
-    // Extended bounds for clipping area
-    let x-clip-min = xmin - x-extend.at(0)
-    let x-clip-max = xmax + x-extend.at(1)
-    let y-clip-min = ymin - y-extend.at(0)
-    let y-clip-max = ymax + y-extend.at(1)
-
-    // Sampling bounds (extend further so lines reach clip edges)
-    let sample-margin = calc.max(xmax - xmin, ymax - ymin) * 0.5
-    let x-plot-min = x-clip-min - sample-margin
-    let x-plot-max = x-clip-max + sample-margin
-    let y-plot-min = y-clip-min - sample-margin
-    let y-plot-max = y-clip-max + sample-margin
-
-    // Clip bounds in canvas coordinates
-    let clip-x1 = grid-x-start
-    let clip-y1 = grid-y-start
-    let clip-x2 = grid-x-end
-    let clip-y2 = grid-y-end
-
-    // Merge series: array with positional functions
-    let all-funcs = if series != none { series + functions.pos() } else { functions.pos() }
-
-    // Separate zoom inset specs — rendered after axes
-    let is-zoom-spec(f) = type(f) == dictionary and "zoom-region" in f
-    let zoom-specs = all-funcs.filter(is-zoom-spec)
-    let all-funcs = all-funcs.filter(f => not is-zoom-spec(f))
-
     // Plot functions and data (with manual line clipping)
+    // Pending labels for the automatic label placement pass that runs after
+    // the axes are drawn (obstacles were pre-sampled above).
+    let label-requests = ()
+
+    // Two passes over the series: area-type specs first (fills, hatches,
+    // Riemann sums — they must stay behind the axes), then the axes with
+    // ticks and labels, then line-type specs (curves, markers, guides) so
+    // functions pass in FRONT of the tick labels. Crossed tick labels are
+    // hidden above, so a curve only runs over the rare kept-for-scale label.
+    let is-area-spec(f) = (type(f) == dictionary and (
+      "fill" in f or "fill-between" in f or "fill-fn1" in f or
+      "riemann" in f or "fill-closed" in f
+    ))
+
+    for pass in ("area", "axes", "line") {
+    if pass == "axes" {
+      draw-axes-ticks-labels()
+      continue
+    }
     for func-spec in all-funcs {
       let func-spec = if type(func-spec) == function { (fn: func-spec) } else { func-spec }
+      if (pass == "area") != is-area-spec(func-spec) { continue }
       let fn = func-spec.at("fn", default: none)
       let data-points = func-spec.at("points", default: func-spec.at("data", default: none))
       let stroke-style = func-spec.at("stroke", default: s.plot.stroke)
@@ -1056,20 +1283,20 @@
           let label-side = func-spec.at("label-side", default: none)
           // Clip label position to the data range (xmin/xmax).
           // Do NOT clip to x-clip-max — that includes axis arrow overshoot and places labels outside the canvas.
-          // "south-west" text extends right into the axis extension zone, which is natural for end-of-curve labels.
           let label-domain-min = if domain == none { xmin } else { calc.max(float(domain-min), xmin) }
           let label-domain-max = if domain == none { xmax } else { calc.min(float(domain-max), xmax) }
-          let label-anchor = if label-side != none {
-            side-to-anchor(label-side)
-          } else {
-            func-spec.at("label-anchor", default: "south-west")
-          }
-          let lx = label-domain-min + (label-domain-max - label-domain-min) * label-pos
-          let ly = fn(lx)
-          if ly != none and not float(ly).is-nan() and ly >= y-clip-min and ly <= y-clip-max {
-            let (cx, cy) = to-canvas(lx, ly)
-            content((cx, cy), apply-font(label), anchor: label-anchor)
-          }
+          let explicit-anchor = if label-side != none { side-to-anchor(label-side) }
+                                else { func-spec.at("label-anchor", default: auto) }
+          // Placement deferred: labels are auto-placed after all series and the
+          // axes are known, so they can avoid curves, axes and tick labels.
+          label-requests.push((
+            fn: fn,
+            label: label,
+            t: label-pos,
+            dmin: label-domain-min,
+            dmax: label-domain-max,
+            anchor: explicit-anchor,
+          ))
         }
 
       } else if data-points != none {
@@ -1424,9 +1651,187 @@
         }
       }
     }
+    }  // end area/axes/line passes
 
-    // Keep axes and tick labels above curves, markers, and filled regions.
-    draw-axes-ticks-labels()
+    // ── Automatic function-label placement ─────────────────────────────────
+    // Each label tries positions along its curve (starting at label-pos) and
+    // anchors around the point, and takes the first spot that touches neither
+    // a curve, an axis, a tick label, a previously placed label, nor the
+    // canvas edge.  Explicit label-anchor / label-side skip the search.
+    if label-requests.len() > 0 {
+      // Axis lines as obstacle segments (with their extensions).
+      let (ax1, ay) = to-canvas(xmin, x-axis-y)
+      let (ax2, _) = to-canvas(xmax, x-axis-y)
+      let (vx, vy1) = to-canvas(y-axis-x, ymin)
+      let (_, vy2) = to-canvas(y-axis-x, ymax)
+      let axis-segs = (
+        ((ax1 - x-extend.at(0) * x-scale, ay), (ax2 + x-extend.at(1) * x-scale, ay)),
+        ((vx, vy1 - y-extend.at(0) * y-scale), (vx, vy2 + y-extend.at(1) * y-scale)),
+      )
+
+      // Tick-label boxes actually drawn (hidden ones excluded).
+      let tick-boxes = ()
+      for x in x-ticks.ticks {
+        if x-has-label(x) and not is-hidden-x(x) and (xmax-on-tick or calc.abs(x - xmax) > 0.0001) {
+          tick-boxes.push(x-tick-label-box(x))
+        }
+      }
+      for y in y-ticks.ticks {
+        if y-has-label(y) and not is-hidden-y(y) and (ymax-on-tick or calc.abs(y - ymax) > 0.0001) {
+          tick-boxes.push(y-tick-label-box(y))
+        }
+      }
+      if show-origin and not origin-hidden and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
+        tick-boxes.push(origin-label-box())
+      }
+      // Axis-name labels (x / y at the arrow ends, default "end" positions).
+      if xlabel != none and xlabel-pos == "end" {
+        let (bx, by) = to-canvas(xmax, x-axis-y)
+        let (ox, oy) = xlabel-offset
+        let ax = bx + x-extend.at(1) * x-scale + ox
+        let ay = by + oy
+        let ms = measure(apply-font(text(size: s.labels.size)[#xlabel]))
+        // anchored "south-east": box extends left and up from the point
+        tick-boxes.push((ax - ms.width / 1cm - 0.05, ay - 0.02, ax + 0.05, ay + ms.height / 1cm + 0.02))
+      }
+      if ylabel != none and ylabel-pos == "end" {
+        let (bx, by) = to-canvas(y-axis-x, ymax)
+        let (ox, oy) = ylabel-offset
+        let ax = bx + ox
+        let ay = by + y-extend.at(1) * y-scale + oy
+        let ms = measure(apply-font(text(size: s.labels.size)[#ylabel]))
+        // anchored "north-west": box extends right and down from the point
+        tick-boxes.push((ax - 0.05, ay - ms.height / 1cm - 0.02, ax + ms.width / 1cm + 0.05, ay + 0.02))
+      }
+
+      // Vertical visible bounds for label boxes (plot area + extensions).
+      // Horizontal bounds are computed per label: an end label may stick out
+      // of the grid by its own width (the canvas grows around it), pgfplots-style.
+      let vis-y1 = -0.25
+      let vis-y2 = height + y-extend.at(1) * y-scale + 0.35
+
+      // Box of a label of size (w, h) anchored at point (px, py).
+      let anchor-box(anchor, px, py, w, h) = {
+        if anchor == "south-west" { (px, py, px + w, py + h) }
+        else if anchor == "south-east" { (px - w, py, px, py + h) }
+        else if anchor == "north-west" { (px, py - h, px + w, py) }
+        else if anchor == "north-east" { (px - w, py - h, px, py) }
+        else if anchor == "south" { (px - w / 2, py, px + w / 2, py + h) }
+        else if anchor == "north" { (px - w / 2, py - h, px + w / 2, py) }
+        else if anchor == "east" { (px - w, py - h / 2, px, py + h / 2) }
+        else if anchor == "west" { (px, py - h / 2, px + w, py + h / 2) }
+        else { (px - w / 2, py - h / 2, px + w / 2, py + h / 2) }
+      }
+
+      let placed-boxes = ()
+      for req in label-requests {
+        let m = measure(apply-font(req.label))
+        let pad = 0.08  // content padding (2pt) + breathing room
+        let w = m.width / 1cm + 2 * pad
+        let h = m.height / 1cm + 2 * pad
+        let vis-x1 = -(w + 0.15)
+        let vis-x2 = width + x-extend.at(1) * x-scale + w + 0.15
+
+        let score-box(b) = {
+          // Shrink slightly so a corner grazing its own curve doesn't count.
+          let tb = (b.at(0) + 0.02, b.at(1) + 0.02, b.at(2) - 0.02, b.at(3) - 0.02)
+          let score = 0
+          if tb.at(0) < vis-x1 or tb.at(1) < vis-y1 or tb.at(2) > vis-x2 or tb.at(3) > vis-y2 { score += 6 }
+          for (p1, p2) in axis-segs {
+            // Inflate the axis by the tick length so labels also clear the tick marks.
+            let ab = (calc.min(p1.at(0), p2.at(0)) - tick-len, calc.min(p1.at(1), p2.at(1)) - tick-len,
+                      calc.max(p1.at(0), p2.at(0)) + tick-len, calc.max(p1.at(1), p2.at(1)) + tick-len)
+            if boxes-overlap(tb, ab) { score += 4 }
+          }
+          let curve-hits = 0
+          for (p1, p2) in obstacle-segs {
+            if seg-hits-box(p1, p2, tb) {
+              curve-hits += 1
+              if curve-hits >= 3 { break }
+            }
+          }
+          score += 3 * curve-hits
+          for b2 in tick-boxes {
+            if boxes-overlap(tb, b2) { score += 2; break }
+          }
+          for b2 in placed-boxes {
+            if boxes-overlap(tb, b2) { score += 3; break }
+          }
+          score
+        }
+
+        let best = none  // (score, point, anchor, box)
+        if req.anchor != auto {
+          // Explicit placement: honour it as-is.
+          let lx = req.dmin + (req.dmax - req.dmin) * req.t
+          let ly = (req.fn)(lx)
+          if ly != none and not float(ly).is-nan() and ly >= y-clip-min and ly <= y-clip-max {
+            let (px, py) = to-canvas(lx, ly)
+            best = (0, (px, py), req.anchor, anchor-box(req.anchor, px, py, w, h))
+          }
+        } else {
+          let span = req.dmax - req.dmin
+          let deltas = (0, -0.06, 0.06, -0.12, 0.12, -0.2, 0.2, -0.3, 0.3, -0.42, 0.42, -0.56, 0.56, -0.72, 0.72)
+          let tried = ()
+          for d in deltas {
+            if best != none and best.at(0) == 0 { break }
+            let t = calc.max(0.02, calc.min(1.0, req.t + d))
+            if tried.any(v => calc.abs(v - t) < 0.005) { continue }
+            tried.push(t)
+            let lx = req.dmin + span * t
+            let ly = (req.fn)(lx)
+            if ly == none or float(ly).is-nan() or ly < y-clip-min or ly > y-clip-max { continue }
+            let (px, py) = to-canvas(lx, ly)
+            // Anchor preference from the local slope: lean away from the curve.
+            let hh = span * 0.01
+            let ya = (req.fn)(lx - hh)
+            let yb = (req.fn)(lx + hh)
+            let slope = if (ya != none and yb != none and not float(ya).is-nan()
+              and not float(yb).is-nan() and hh > 0) {
+              (float(yb) - float(ya)) / (2 * hh) * (y-scale / x-scale)
+            } else { 0 }
+            let anchors = if slope > 0.15 {
+              ("south-east", "north-west", "south-west", "north-east", "south", "north")
+            } else if slope < -0.15 {
+              ("south-west", "north-east", "south-east", "north-west", "south", "north")
+            } else {
+              ("south-west", "south-east", "south", "north-west", "north-east", "north")
+            }
+            for anchor in anchors {
+              let b = anchor-box(anchor, px, py, w, h)
+              let sc = score-box(b)
+              if best == none or sc < best.at(0) {
+                best = (sc, (px, py), anchor, b)
+              }
+              if sc == 0 { break }
+            }
+          }
+
+          // Fallback: end labels just outside the grid, vertically centred on
+          // the curve (textbook style for asymptotes crowded by tick labels).
+          if best == none or best.at(0) > 0 {
+            for (t, anchor) in ((1.0, "west"), (0.0, "east")) {
+              let lx = req.dmin + span * t
+              let ly = (req.fn)(lx)
+              if ly == none or float(ly).is-nan() or ly < y-clip-min or ly > y-clip-max { continue }
+              let (px, py) = to-canvas(lx, ly)
+              let b = anchor-box(anchor, px, py, w, h)
+              let sc = score-box(b)
+              if best == none or sc < best.at(0) {
+                best = (sc, (px, py), anchor, b)
+              }
+              if sc == 0 { break }
+            }
+          }
+        }
+
+        if best != none {
+          let (_, pt, anchor, b) = best
+          content(pt, apply-font(req.label), anchor: anchor)
+          placed-boxes.push(b)
+        }
+      }
+    }
 
     // ── Zoom / Spy Insets ─────────────────────────────────────────────────
     for zs in zoom-specs {

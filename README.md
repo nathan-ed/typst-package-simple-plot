@@ -37,12 +37,14 @@ Click on an image to see the source code.
 - **Riemann sums** — Left/right/midpoint/lower/upper rectangles; endpoint dots with labels and arrows; Δx bracket; $x_i$ subdivision labels
 - **Volume of revolution** — 3D-style solids: arbitrary axis (horizontal, shifted, or oblique), end caps, disk cross-sections, optional coordinate axes
 - **Zoom / spy insets** — Magnified sub-views with rectangular or circular spy glass, connector lines, and customizable accent colors
+- **Automatic label placement** — function labels avoid overlapping curves, tick labels, and axes automatically
+- **Smart tick density** — auto-selects nice tick spacing for large ranges; crossed labels hidden automatically
 - **Full styling** — Customize colors, strokes, backgrounds, and more
 
 ## Quick Start
 
 ```typst
-#import "@preview/simple-plot:0.9.0": plot
+#import "@preview/simple-plot:0.9.1": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -59,7 +61,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Plotting Functions
 
 ```typst
-#import "@preview/simple-plot:0.9.0": plot
+#import "@preview/simple-plot:0.9.1": plot
 
 // Single function
 #plot(
@@ -81,7 +83,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Scatter Plots
 
 ```typst
-#import "@preview/simple-plot:0.9.0": plot, data
+#import "@preview/simple-plot:0.9.1": plot, data
 
 #plot(
   xmin: 0, xmax: 10,
@@ -98,7 +100,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Line Plots with Markers
 
 ```typst
-#import "@preview/simple-plot:0.9.0": plot, line-plot
+#import "@preview/simple-plot:0.9.1": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -161,7 +163,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 `plot-rational` is a thin wrapper around `plot` with defaults suited to rational-function exercises: centered axes, a visible grid, and one main function curve. Extra positional arguments are forwarded as additional series, so asymptotes and points can be added normally.
 
 ```typst
-#import "@preview/simple-plot:0.9.0": plot-rational, hline
+#import "@preview/simple-plot:0.9.1": plot-rational, hline
 
 #plot-rational(
   x => (x + 1) / (x - 2),
@@ -177,7 +179,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 `limit-schema` draws compact schematic behavior near a point `a`. Use finite numbers for one-sided limits, `"+oo"` / `"-oo"` for vertical asymptotic behavior, and `val` for the defined value at the point. `schema-lim` is available as an alias.
 
 ```typst
-#import "@preview/simple-plot:0.9.0": limit-schema
+#import "@preview/simple-plot:0.9.1": limit-schema
 
 #limit-schema(a: 1, left: 4, right: 4)              // removable hole
 #limit-schema(a: 2, left: "+oo", right: "-oo")      // vertical asymptote
@@ -253,7 +255,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Riemann Sums
 
 ```typst
-#import "@preview/simple-plot:0.9.0": plot, riemann-sum
+#import "@preview/simple-plot:0.9.1": plot, riemann-sum
 
 #plot(
   xmin: 0, xmax: 3, ymin: 0, ymax: 5,
@@ -305,7 +307,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Volume of Revolution
 
 ```typst
-#import "@preview/simple-plot:0.9.0": volume-of-revolution
+#import "@preview/simple-plot:0.9.1": volume-of-revolution
 
 #volume-of-revolution(
   x => calc.sqrt(x),
@@ -396,7 +398,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Setting Global Defaults
 
 ```typst
-#import "@preview/simple-plot:0.9.0": set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.9.1": set-plot-defaults, reset-plot-defaults
 
 #set-plot-defaults(width: 6, height: 4, show-grid: "major")
 
@@ -428,6 +430,17 @@ them clear of the tick numbers (which sit below / left of the axis).
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [0.9.1] - 2026-07-02
+
+#### Added
+- **Automatic function-label placement** — labels now find a clear spot along the curve automatically, avoiding overlaps with other curves, tick labels, axes, and previously placed labels; `label-anchor`/`label-side` override when explicit placement is needed
+- **`min-tick-spacing`** — auto-widens tick step to the next "nice" value (1, 2, 5, 10…) when the axis range would crowd labels below the threshold; keeps large-range plots legible without manual `xtick-step`
+- **`hide-crossed-tick-labels`** — hides individual tick labels that a plotted curve crosses, so digits stay readable even when curves pass through the label band
+- **White label backgrounds** — tick labels and axis-name labels are drawn over a white background so curves behind them don't bleed through
+
+#### Fixed
+- `ylabel-offset` default corrected: was `(-0.08, -0.05)`, now `(0.08, -0.05)` — the $y$ axis label was shifted left instead of right
 
 ### [0.9.0] - 2026-06-15
 

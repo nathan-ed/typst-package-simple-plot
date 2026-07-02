@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.9.0": plot, plot-fn, plot-rational, limit-schema, schema-lim, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, zoom, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:0.9.1": plot, plot-fn, plot-rational, limit-schema, schema-lim, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, zoom, set-plot-defaults, reset-plot-defaults
 
 // =============================================================================
 // DOCUMENT SETUP
@@ -89,7 +89,7 @@
   #v(1cm)
   #text(size: 11pt)[
     A lightweight library for creating elegant mathematical plots\
-    Version 0.9.0\
+    Version 0.9.1\
     Nathan Scheinmann
   ]
 ]
@@ -136,7 +136,7 @@
 Import the package in your Typst document:
 
 ```typst
-#import "@preview/simple-plot:0.9.0": plot
+#import "@preview/simple-plot:0.9.1": plot
 ```
 
 == Quick Start
@@ -276,7 +276,7 @@ Specify a custom domain for functions:
 
 == Function Labels
 
-Add labels to your functions:
+Add a `label:` field to any function spec. By default, labels are placed *automatically*: the engine scores candidate positions along the curve and around each point, avoiding other curves, tick labels, axes, and previously placed labels. Set `label-anchor` or `label-side` to override placement.
 
 #example-full(
   [```typst
@@ -1581,6 +1581,8 @@ Override default styles with the `style` parameter:
   [`unit-label-only`], [bool], [false], [Show only "1" on axes],
   [`tick-label-size`], [length], [0.65em], [Tick label font size],
   [`axis-label-size`], [length], [0.8em], [Axis label font size],
+  [`min-tick-spacing`], [float], [0.4], [Minimum distance between ticks (cm); auto-widens step to the next "nice" value (1, 2, 5, 10…) when the range is large],
+  [`hide-crossed-tick-labels`], [bool], [true], [Hide individual tick labels that a plotted curve crosses, keeping labels legible],
 )
 
 #pagebreak()
