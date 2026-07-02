@@ -6,7 +6,7 @@ A simple, pgfplots-like function plotting library for Typst. Create beautiful ma
 
 ## Manual
 
-A full manual is available in [docs/manual.pdf](https://github.com/nathan-ed/typst-package-simple-plot/blob/d7e68370a7aa3e252de3e1d7aa4a01c44fd79e16/docs/manual.pdf).
+A full manual is available in [docs/manual.pdf](https://github.com/nathan-ed/typst-package-simple-plot/blob/609b17d00a99f0220e435f6e7a892d6f1644d54e/docs/manual.pdf).
 
 ## Gallery
 
