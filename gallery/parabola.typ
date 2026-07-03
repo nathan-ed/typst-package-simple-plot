@@ -9,5 +9,5 @@
   xlabel: $x$,
   ylabel: $y$,
   show-grid: "major",
-  (fn: x => calc.pow(x, 2), stroke: blue + 1.5pt, label: $x^2$, label-pos: 0.7, label-side: "below-right"),
+  (fn: x => calc.pow(x, 2), stroke: blue + 1.5pt, label: $x^2$, label-pos: 0.75, label-side: "right"),
 )

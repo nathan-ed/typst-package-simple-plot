@@ -431,7 +431,7 @@ MIT License — see LICENSE file for details.
 
 ## Changelog
 
-### [0.9.1] - 2026-07-02
+### [0.9.1] - 2026-07-03
 
 #### Added
 - **Automatic function-label placement** — labels now find a clear spot along the curve automatically, avoiding overlaps with other curves, tick labels, axes, and previously placed labels; `label-anchor`/`label-side` override when explicit placement is needed
@@ -441,6 +441,13 @@ MIT License — see LICENSE file for details.
 
 #### Fixed
 - `ylabel-offset` default corrected: was `(-0.08, -0.05)`, now `(0.08, -0.05)` — the $y$ axis label was shifted left instead of right
+- **Area specs are now clipped to the plot rectangle** — `fill-area`, `area-between`, `fill-closed` and `riemann-sum` rectangles no longer overflow the axes area when the function or the given `domain` exceeds the axis range; they are clipped exactly like curves
+- **Riemann annotations flip for negative functions** — the `Δx` bracket and `x_i` labels move above the baseline when the rectangles extend below it, instead of printing through the fill
+- **`x_i` labels no longer collide with x tick labels** — tick labels under `show-xi`/`show-dx` annotations near the baseline are hidden automatically
+- **`show-points` dots are clipped** — evaluation dots (and their label arrows) outside the plot area are dropped
+- **Circular zoom lens is a true circle** — the spy glass and its inset are drawn as circles with uniform canvas-space magnification (shapes are preserved); previously both were ellipses derived from the region's bounding box
+- **Zoom connector lines follow external tangents** — for circular lenses the dashed connectors touch both circle borders exactly and never cross the shapes; the inset size is capped at 80% of the plot and auto placement keeps it on canvas
+- Guard against division by zero in `volume-of-revolution` for degenerate domains
 
 ### [0.9.0] - 2026-06-15
 

@@ -1272,11 +1272,11 @@ riemann-sum(
 ```
 
 #plot(
-  width: 11, height: 6,
-  xmin: -0.2, xmax: 3.5, ymin: -0.1, ymax: 5.5,
+  width: 11, height: 6.5,
+  xmin: -0.2, xmax: 3.5, ymin: 0, ymax: 9.8,
   axis-x-pos: "bottom", axis-y-pos: "left",
   xlabel: $x$, ylabel: $y$,
-  xtick: (0, 1, 2, 3), ytick: (1, 2, 3, 4, 5),
+  xtick: (1, 2, 3), ytick: (2, 4, 6, 8),
   show-origin: false,
   riemann-sum(
     x => x * x,
@@ -1284,13 +1284,12 @@ riemann-sum(
     n: 6, method: "right",
     color: blue.lighten(80%),
     stroke: blue.darken(10%) + 0.6pt,
-    show-points: true,
+    show-points: true, point-label: none,
     show-dx: true, dx-rect: 2, dx-label: $Delta x$,
     show-xi: true,
   ),
-  fill-area(x => x * x, domain: (0.0, 3.0), color: blue.transparentize(88%)),
-  (fn: x => x * x, domain: (0.0, 3.2), stroke: blue + 1.5pt,
-   label: $f(x)=x^2$, label-pos: 0.88, label-anchor: "south-west"),
+  (fn: x => x * x, domain: (0.0, 3.1), stroke: blue + 1.5pt,
+   label: $f(x)=x^2$, label-pos: 1.0, label-side: "left"),
 )
 
 === `xi-show-values`

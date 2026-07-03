@@ -675,6 +675,12 @@
     let clip-x2 = grid-x-end
     let clip-y2 = grid-y-end
 
+    // Clamp a data coordinate into the plot rectangle. Area-type specs
+    // (fills, Riemann rectangles) are clipped with these, mirroring the
+    // clip-segment clipping applied to curves.
+    let clamp-x(x) = calc.max(xmin, calc.min(xmax, float(x)))
+    let clamp-y(y) = calc.max(ymin, calc.min(ymax, float(y)))
+
     // Merge series: array with positional functions
     let all-funcs = if series != none { series + functions.pos() } else { functions.pos() }
 
@@ -812,6 +818,59 @@
         }
       }
     }
+    // Majority side of a Riemann sum's rectangles relative to its baseline:
+    // true when most rectangles extend below (negative function). The x_i
+    // labels and the Δx bracket then move above the baseline, out of the fill.
+    // Used both here (tick hiding) and in the Riemann renderer — keep in sync.
+    let riemann-flip-up(fn, d1, w, n, base) = {
+      let below = 0
+      let above = 0
+      for i in range(n) {
+        let v = fn(d1 + (i + 0.5) * w)
+        if v == none { continue }
+        let fv = float(v)
+        if fv.is-nan() { continue }
+        if fv < base { below += 1 } else { above += 1 }
+      }
+      below > above
+    }
+
+    // ── Hide x tick labels under Riemann annotations ───────────────────────
+    // x_i labels (and the Δx bracket) drawn below the axis replace the x tick
+    // labels at the same positions, which would otherwise print on top.
+    for func-spec in all-funcs {
+      if type(func-spec) != dictionary { continue }
+      if "riemann" not in func-spec { continue }
+      let r-base = func-spec.at("baseline", default: 0.0)
+      // Annotations are drawn at the baseline; they collide with the tick
+      // labels when the baseline runs close (in cm) to the x-axis line.
+      if calc.abs((r-base - x-axis-y) * y-scale) > 0.45 { continue }
+      let show-xi = func-spec.at("show-xi", default: false)
+      let show-dx = func-spec.at("show-dx", default: false)
+      if not (show-xi or show-dx) { continue }
+      let r-fn = func-spec.at("riemann")
+      let (rd1, rd2) = func-spec.at("domain", default: (xmin, xmax))
+      let r-n = func-spec.at("n", default: 4)
+      let rw = (rd2 - rd1) / r-n
+      // Flipped-up annotations sit above the axis and cannot collide.
+      if riemann-flip-up(r-fn, rd1, rw, r-n, r-base) { continue }
+      if show-xi {
+        for i in range(r-n + 1) {
+          let x = rd1 + i * rw
+          if x >= xmin - 0.0001 and x <= xmax + 0.0001 { hidden-x.push(x) }
+        }
+      }
+      if show-dx {
+        let dxi = func-spec.at("dx-rect", default: auto)
+        let dxi = if dxi == auto { calc.floor(r-n / 2) } else { dxi }
+        for t in x-ticks.ticks {
+          if t >= rd1 + dxi * rw - 0.0001 and t <= rd1 + (dxi + 1) * rw + 0.0001 {
+            hidden-x.push(t)
+          }
+        }
+      }
+    }
+
     let is-hidden-x(x) = hidden-x.any(v => calc.abs(v - x) < 0.0001)
     let is-hidden-y(y) = hidden-y.any(v => calc.abs(v - y) < 0.0001)
 
@@ -1335,19 +1394,24 @@
         let hatch-sp     = func-spec.at("hatch-spacing", default: 5pt)
         let hatch-stroke = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
 
+        // Clip to the plot rectangle: restrict the domain, clamp the y values.
         let (d1, d2) = domain
-        let step = (d2 - d1) / samples
+        let d1 = calc.max(float(d1), xmin)
+        let d2 = calc.min(float(d2), xmax)
         let top-pts = ()
         let bot-pts = ()
 
-        for i in range(samples + 1) {
-          let x = d1 + i * step
-          let y = fill-fn(x)
-          if y != none and not float(y).is-nan() {
-            let (cx, cy-top) = to-canvas(x, float(y))
-            let (_, cy-bot) = to-canvas(x, float(baseline))
-            top-pts.push((cx, cy-top))
-            bot-pts.push((cx, cy-bot))
+        if d2 - d1 > 1e-9 {
+          let step = (d2 - d1) / samples
+          for i in range(samples + 1) {
+            let x = d1 + i * step
+            let y = fill-fn(x)
+            if y != none and not float(y).is-nan() {
+              let (cx, cy-top) = to-canvas(x, clamp-y(y))
+              let (_, cy-bot) = to-canvas(x, clamp-y(baseline))
+              top-pts.push((cx, cy-top))
+              bot-pts.push((cx, cy-bot))
+            }
           }
         }
 
@@ -1377,21 +1441,26 @@
         let hatch-sp     = func-spec.at("hatch-spacing", default: 5pt)
         let hatch-stroke = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
 
+        // Clip to the plot rectangle: restrict the domain, clamp the y values.
         let (d1, d2) = domain
-        let step = (d2 - d1) / samples
+        let d1 = calc.max(float(d1), xmin)
+        let d2 = calc.min(float(d2), xmax)
         let fwd-pts = ()
         let bwd-pts = ()
 
-        for i in range(samples + 1) {
-          let x = d1 + i * step
-          let y1 = fn1(x)
-          let y2 = fn2(x)
-          if (y1 != none and not float(y1).is-nan()
-              and y2 != none and not float(y2).is-nan()) {
-            let (cx, cy-top) = to-canvas(x, calc.max(float(y1), float(y2)))
-            let (_, cy-bot)  = to-canvas(x, calc.min(float(y1), float(y2)))
-            fwd-pts.push((cx, cy-top))
-            bwd-pts.push((cx, cy-bot))
+        if d2 - d1 > 1e-9 {
+          let step = (d2 - d1) / samples
+          for i in range(samples + 1) {
+            let x = d1 + i * step
+            let y1 = fn1(x)
+            let y2 = fn2(x)
+            if (y1 != none and not float(y1).is-nan()
+                and y2 != none and not float(y2).is-nan()) {
+              let (cx, cy-top) = to-canvas(x, clamp-y(calc.max(float(y1), float(y2))))
+              let (_, cy-bot)  = to-canvas(x, clamp-y(calc.min(float(y1), float(y2))))
+              fwd-pts.push((cx, cy-top))
+              bwd-pts.push((cx, cy-bot))
+            }
           }
         }
 
@@ -1467,38 +1536,52 @@
                         else if r-method == "right" { xr }
                         else { (xl + xr) / 2.0 }
             let ev = r-fn(xeval)
-            if ev != none and not float(ev).is-nan() {
+            // Dots only inside the plot rectangle (rectangles are clipped too)
+            if (ev != none and not float(ev).is-nan()
+                and xeval >= xmin - 1e-9 and xeval <= xmax + 1e-9
+                and float(ev) >= ymin - 1e-9 and float(ev) <= ymax + 1e-9) {
               eval-pts.push(to-canvas(xeval, float(ev)))
             }
             ev
           }
           if y != none and not float(y).is-nan() {
             let yv = float(y)
-            let (cxl, cybot) = to-canvas(xl, r-base)
-            let (cxr, cytop) = to-canvas(xr, yv)
-            let paint = if hatch-style != none {
-              make-hatch-pattern(hatch-style, hatch-sp, hatch-stk)
-            } else { fill-color }
-            rect((cxl, cybot), (cxr, cytop), fill: paint, stroke: rect-stroke)
+            // Clip the rectangle to the plot area
+            let xl-c = clamp-x(xl)
+            let xr-c = clamp-x(xr)
+            if xr-c - xl-c > 1e-9 {
+              let (cxl, cybot) = to-canvas(xl-c, clamp-y(r-base))
+              let (cxr, cytop) = to-canvas(xr-c, clamp-y(yv))
+              let paint = if hatch-style != none {
+                make-hatch-pattern(hatch-style, hatch-sp, hatch-stk)
+              } else { fill-color }
+              rect((cxl, cybot), (cxr, cytop), fill: paint, stroke: rect-stroke)
+            }
           }
         }
+
+        // Annotations flip above the baseline when most rectangles extend
+        // below it (negative function), so they stay out of the fill.
+        let flip-up = riemann-flip-up(r-fn, d1, w, r-n, r-base)
+        let a-dir = if flip-up { 1.0 } else { -1.0 }
 
         // ── Δx bracket ──────────────────────────────────────────────────────
         let dx-di = if r-dx-rect == auto { calc.floor(r-n / 2) } else { r-dx-rect }
         if r-show-dx {
           let xl = d1 + dx-di * w
           let xr = d1 + (dx-di + 1) * w
-          let (cxl, cy-base) = to-canvas(xl, r-base)
-          let (cxr, _)       = to-canvas(xr, r-base)
+          let (cxl, cy-base) = to-canvas(clamp-x(xl), clamp-y(r-base))
+          let (cxr, _)       = to-canvas(clamp-x(xr), clamp-y(r-base))
           let tick-drop = 0.10
-          let arrow-y   = cy-base - 0.18
-          line((cxl, cy-base - 0.02), (cxl, cy-base - tick-drop), stroke: black + 0.5pt)
-          line((cxr, cy-base - 0.02), (cxr, cy-base - tick-drop), stroke: black + 0.5pt)
+          let arrow-y   = cy-base + a-dir * 0.18
+          line((cxl, cy-base + a-dir * 0.02), (cxl, cy-base + a-dir * tick-drop), stroke: black + 0.5pt)
+          line((cxr, cy-base + a-dir * 0.02), (cxr, cy-base + a-dir * tick-drop), stroke: black + 0.5pt)
           line((cxl, arrow-y), (cxr, arrow-y),
                mark: (start: (symbol: "stealth", fill: black, scale: 0.35),
                       end:   (symbol: "stealth", fill: black, scale: 0.35)),
                stroke: black + 0.5pt)
-          content(((cxl + cxr) / 2, arrow-y - 0.06), r-dx-label, anchor: "north")
+          content(((cxl + cxr) / 2, arrow-y + a-dir * 0.06), r-dx-label,
+                  anchor: if flip-up { "south" } else { "north" })
         }
 
         // ── x_i labels ──────────────────────────────────────────────────────
@@ -1507,7 +1590,9 @@
             // Skip the two indices that straddle the Δx bracket to avoid overlap
             if r-show-dx and (i == dx-di or i == dx-di + 1) { continue }
             let x = d1 + i * w
-            let (cx, cy) = to-canvas(x, r-base)
+            // Clip labels to the x-range
+            if x < xmin - 1e-9 or x > xmax + 1e-9 { continue }
+            let (cx, cy) = to-canvas(x, clamp-y(r-base))
             let xi-lbl = if r-xi-labels != auto and i < r-xi-labels.len() {
               r-xi-labels.at(i)
             } else {
@@ -1525,7 +1610,8 @@
             }
             // Always shift right when xi label lands on the y-axis to avoid overlap
             let x-shift = if calc.abs(x - y-axis-x) < 0.001 { 0.35 } else { 0.0 }
-            content((cx + x-shift, cy - 0.20), apply-font(lbl), anchor: "north")
+            content((cx + x-shift, cy + a-dir * 0.20), apply-font(lbl),
+                    anchor: if flip-up { "south" } else { "north" })
           }
         }
 
@@ -1632,7 +1718,8 @@
           let px = par-x(t)
           let py = par-y(t)
           if px != none and py != none and not float(px).is-nan() and not float(py).is-nan() {
-            par-pts.push(to-canvas(float(px), float(py)))
+            // Clamp into the plot rectangle (cheap clip; fine at 80+ samples)
+            par-pts.push(to-canvas(clamp-x(px), clamp-y(py)))
           }
         }
         if par-pts.len() > 2 {
@@ -1847,16 +1934,48 @@
         (r.at(0), r.at(1), r.at(2), r.at(3))
       }
 
+      let lens-shape  = zs.at("lens-shape", default: "rect")
+      let is-circle   = lens-shape == "circle"
+
+      // Canvas coords of the zoom region bounding box.
+      // For a circle lens, the spy glass is a true canvas circle covering the
+      // region's bounding box, and the inset magnifies uniformly in canvas
+      // space (shapes are preserved; a circle stays a circle).
+      let (crx1, cry1) = to-canvas(zx1, zy1)
+      let (crx2, cry2) = to-canvas(zx2, zy2)
+      let lens-cx = (crx1 + crx2) / 2
+      let lens-cy = (cry1 + cry2) / 2
+      let lens-rx = (crx2 - crx1) / 2
+      let lens-ry = (cry2 - cry1) / 2
+      let lens-r  = calc.max(lens-rx, lens-ry)
+
       // Resolve inset size: explicit, magnification-based, or default
       let z-mag  = zs.at("magnification", default: none)
       let zoom-w = if "zoom-width" in zs   { zs.at("zoom-width") }
-                   else if z-mag != none   { (zx2 - zx1) * x-scale * z-mag }
+                   else if z-mag != none   {
+                     if is-circle { 2 * lens-r * z-mag }
+                     else         { (zx2 - zx1) * x-scale * z-mag }
+                   }
                    else                    { 3.5 }
-      let zoom-h = if "zoom-height" in zs  { zs.at("zoom-height") }
+      let zoom-h = if is-circle            { zoom-w }
+                   else if "zoom-height" in zs { zs.at("zoom-height") }
                    else if z-mag != none   { (zy2 - zy1) * y-scale * z-mag }
                    else                    { 3.5 }
 
-      let lens-shape  = zs.at("lens-shape", default: "rect")
+      // Cap the inset size so it can never dwarf the plot itself
+      let size-f = calc.min(1.0, 0.8 * width / zoom-w, 0.8 * height / zoom-h)
+      zoom-w = zoom-w * size-f
+      zoom-h = zoom-h * size-f
+
+      // Circle lens: widen the effective data region to the circle's bounding
+      // box so sampling, grid and mapping cover the whole lens uniformly.
+      if is-circle {
+        zx1 = xmin + (lens-cx - lens-r) / x-scale
+        zx2 = xmin + (lens-cx + lens-r) / x-scale
+        zy1 = ymin + (lens-cy - lens-r) / y-scale
+        zy2 = ymin + (lens-cy + lens-r) / y-scale
+      }
+
       let do-connect  = zs.at("connect", default: true)
       let accent-col  = zs.at("accent", default: rgb("#4a90d9"))
       let reg-fill    = zs.at("region-fill", default: none)
@@ -1873,26 +1992,19 @@
       let do-mag      = zs.at("show-magnification", default: false)
       let z-label     = zs.at("label", default: none)
 
-      // Canvas coords of the zoom region bounding box
-      let (crx1, cry1) = to-canvas(zx1, zy1)
-      let (crx2, cry2) = to-canvas(zx2, zy2)
-      let lens-cx = (crx1 + crx2) / 2
-      let lens-cy = (cry1 + cry2) / 2
-      let lens-rx = (crx2 - crx1) / 2
-      let lens-ry = (cry2 - cry1) / 2
-
       // Canvas center of the inset box
       let (cix, ciy) = {
         let at-val = zs.at("at", default: auto)
         let margin-x = zoom-w / 2 + 0.2
         let margin-y = zoom-h / 2 + 0.2
         if at-val == auto {
-          // Smart default: opposite quadrant from zoom center
+          // Smart default: opposite quadrant from zoom center, kept on canvas
           let nc-x = ((zx1 + zx2) / 2 - xmin) / (xmax - xmin)
           let nc-y = ((zy1 + zy2) / 2 - ymin) / (ymax - ymin)
           let tx = if nc-x > 0.5 { 0.25 } else { 0.75 }
           let ty = if nc-y > 0.5 { 0.25 } else { 0.75 }
-          (width * tx, height * ty)
+          (calc.max(margin-x, calc.min(width - margin-x, width * tx)),
+           calc.max(margin-y, calc.min(height - margin-y, height * ty)))
         } else if type(at-val) == str {
           // Named placement keywords: keep inset inside the canvas with margin
           if at-val == "top-right"    { (width  - margin-x, height - margin-y) }
@@ -1914,25 +2026,48 @@
       let bx2 = cix + zoom-w / 2
       let by2 = ciy + zoom-h / 2
 
-      // Pick two non-crossing connector corner pairs
-      let ddx = cix - lens-cx
-      let ddy = ciy - lens-cy
-
-      let (cf1, cf2, ct1, ct2) = if calc.abs(ddx) >= calc.abs(ddy) {
-        if ddx > 0 { ((crx2, cry1), (crx2, cry2), (bx1, by1), (bx1, by2)) }
-        else       { ((crx1, cry1), (crx1, cry2), (bx2, by1), (bx2, by2)) }
-      } else {
-        if ddy > 0 { ((crx1, cry2), (crx2, cry2), (bx1, by1), (bx2, by1)) }
-        else       { ((crx1, cry1), (crx2, cry1), (bx1, by2), (bx2, by2)) }
-      }
-
-      // Connector lines
+      // Connector lines between the spy glass and the inset.
+      // Circle: the two external tangent lines of the two circles — they touch
+      // both borders exactly and never cross either shape.
+      // Rect: two non-crossing corner pairs facing each other.
       if do-connect {
-        if conn-fill != none {
-          line(cf1, ct1, ct2, cf2, close: true, fill: conn-fill, stroke: none)
+        if is-circle {
+          let ins-r = zoom-w / 2
+          let ddx = cix - lens-cx
+          let ddy = ciy - lens-cy
+          let d = calc.sqrt(ddx * ddx + ddy * ddy)
+          // Skip when one circle contains the other (no external tangents)
+          if d > calc.abs(ins-r - lens-r) + 0.01 {
+            let phi  = calc.atan2(ddx, ddy)
+            let beta = calc.acos((lens-r - ins-r) / d)
+            let tangent-pts = (-1.0, 1.0).map(sgn => {
+              let a = phi + sgn * beta
+              ((lens-cx + lens-r * calc.cos(a), lens-cy + lens-r * calc.sin(a)),
+               (cix     + ins-r  * calc.cos(a), ciy     + ins-r  * calc.sin(a)))
+            })
+            let ((f1, t1), (f2, t2)) = tangent-pts
+            if conn-fill != none {
+              line(f1, t1, t2, f2, close: true, fill: conn-fill, stroke: none)
+            }
+            line(f1, t1, stroke: conn-stk)
+            line(f2, t2, stroke: conn-stk)
+          }
+        } else {
+          let ddx = cix - lens-cx
+          let ddy = ciy - lens-cy
+          let (cf1, cf2, ct1, ct2) = if calc.abs(ddx) >= calc.abs(ddy) {
+            if ddx > 0 { ((crx2, cry1), (crx2, cry2), (bx1, by1), (bx1, by2)) }
+            else       { ((crx1, cry1), (crx1, cry2), (bx2, by1), (bx2, by2)) }
+          } else {
+            if ddy > 0 { ((crx1, cry2), (crx2, cry2), (bx1, by1), (bx2, by1)) }
+            else       { ((crx1, cry1), (crx2, cry1), (bx1, by2), (bx2, by2)) }
+          }
+          if conn-fill != none {
+            line(cf1, ct1, ct2, cf2, close: true, fill: conn-fill, stroke: none)
+          }
+          line(cf1, ct1, stroke: conn-stk)
+          line(cf2, ct2, stroke: conn-stk)
         }
-        line(cf1, ct1, stroke: conn-stk)
-        line(cf2, ct2, stroke: conn-stk)
       }
 
       // Drop shadow (shape-aware)
@@ -2098,7 +2233,7 @@
         let n-c = 64
         let circ-pts = range(n-c + 1).map(i => {
           let t = i * 360deg / n-c
-          (lens-cx + lens-rx * calc.cos(t), lens-cy + lens-ry * calc.sin(t))
+          (lens-cx + lens-r * calc.cos(t), lens-cy + lens-r * calc.sin(t))
         })
         line(..circ-pts, close: true, stroke: reg-stk, fill: reg-fill)
       } else {
@@ -2127,7 +2262,12 @@
         text(size: 7pt, fill: accent-col)[×#mag-v]
       } else { none }
       if eff-lbl != none {
-        content((bx1 + 0.12, by2 - 0.06), apply-font(eff-lbl), anchor: "north-west")
+        if is-circle {
+          // Top of the circle, inside the border
+          content(((bx1 + bx2) / 2, by2 - 0.12), apply-font(eff-lbl), anchor: "north")
+        } else {
+          content((bx1 + 0.12, by2 - 0.06), apply-font(eff-lbl), anchor: "north-west")
+        }
       }
     }
   })
@@ -2820,7 +2960,7 @@
   let fx-max = if foot-xs.len() > 0 { calc.max(..foot-xs) } else { float(b) }
   let r-max  = if radii.len()   > 0 { calc.max(..radii)   } else { 1.0 }
 
-  let x-sc = width / (fx-max - fx-min)
+  let x-sc = width / calc.max(fx-max - fx-min, 1e-9)
   let y-sc = (height / 2.0) / r-max
   let ell-r = 0.30
 

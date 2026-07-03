@@ -9,7 +9,7 @@
 #let demo(title, body) = {
   v(0.8em)
   block[
-    *#title*
+    #strong(title)
     #v(0.3em)
     #body
   ]
@@ -18,28 +18,27 @@
 = simple-plot — Volume of revolution gallery
 
 // ── 1. Canonical: sqrt(x) ────────────────────────────────────────────────────
-#demo("1 · $f(x) = sqrt(x)$ on $[0; 4]$ — default look")[
+#demo[1 · $f(x) = sqrt(x)$ on $[0, 4]$ — default look][
   #align(center)[
     #volume-of-revolution(
       x => calc.sqrt(x),
       domain: (0.0, 4.0),
       n-disks: 4,
-      show-y-axis: true,
       width: 8.0, height: 4.0,
-      label-f: $f(x)=sqrt(x)$,
+      label-f: $f(x) = sqrt(x)$,
     )
   ]
 ]
 
 // ── 2. Cylinder — constant function ──────────────────────────────────────────
-#demo("2 · $f(x) = 2$ on $[0; 3]$ — cylinder")[
+#demo[2 · $f(x) = 2$ on $[0, 3]$ — cylinder][
   #align(center)[
     #volume-of-revolution(
       x => 2.0,
       domain: (0.0, 3.0),
       n-disks: 3,
       width: 7.0, height: 3.5,
-      label-f: $f(x)=2$,
+      label-f: $f(x) = 2$,
       disk-color: blue.lighten(80%),
       disk-stroke: blue.darken(20%) + 0.6pt,
       profile-stroke: blue + 1.5pt,
@@ -48,7 +47,7 @@
 ]
 
 // ── 3. Cone — linear function ─────────────────────────────────────────────────
-#demo("3 · $f(x) = x$ on $[0; 3]$ — cone")[
+#demo[3 · $f(x) = x$ on $[0, 3]$ — cone][
   #align(center)[
     #volume-of-revolution(
       x => x,
@@ -65,7 +64,7 @@
 ]
 
 // ── 4. Sphere — semi-circle profile ──────────────────────────────────────────
-#demo("4 · $f(x) = sqrt(4 - x^2)$ on $[-2; 2]$ — sphere")[
+#demo[4 · $f(x) = sqrt(4 - x^2)$ on $[-2, 2]$ — sphere][
   #align(center)[
     #volume-of-revolution(
       x => calc.sqrt(calc.max(0.0, 4.0 - x * x)),
@@ -73,7 +72,7 @@
       n-disks: 5,
       width: 8.0, height: 4.0,
       label-a: $-2$, label-b: $2$,
-      label-f: $f(x)=sqrt(4-x^2)$,
+      label-f: $f$,
       disk-color: green.lighten(80%),
       disk-stroke: green.darken(20%) + 0.6pt,
       profile-stroke: green.darken(20%) + 1.5pt,
@@ -82,14 +81,14 @@
 ]
 
 // ── 5. Exponential — flared solid ─────────────────────────────────────────────
-#demo("5 · $f(x) = e^(x\/2)$ on $[0; 2]$ — flared solid")[
+#demo[5 · $f(x) = e^(x\/2)$ on $[0, 2]$ — flared solid][
   #align(center)[
     #volume-of-revolution(
       x => calc.exp(x / 2.0),
       domain: (0.0, 2.0),
       n-disks: 4,
       width: 7.0, height: 4.0,
-      label-f: $e^(x/2)$,
+      label-f: $e^(x\/2)$,
       disk-color: rgb("#fff0d0"),
       disk-stroke: rgb("#c06000") + 0.7pt,
       profile-stroke: rgb("#c06000") + 1.5pt,
@@ -98,10 +97,10 @@
 ]
 
 // ── 6. Radius marker feature ─────────────────────────────────────────────────
-#demo("6 · `show-radius-marker: true` — radius dimension")[
+#demo[6 · `show-radius-marker: true` — radius dimension][
   #grid(columns: (1fr, 1fr), gutter: 1em,
     align(center)[
-      _y-axis at $x = a$ (default)_
+      _radius at $x = a$ (default)_
       #v(0.3em)
       #volume-of-revolution(
         x => calc.sqrt(x),
@@ -116,7 +115,7 @@
       )
     ],
     align(center)[
-      _y-axis at interior point $x = 2$_
+      _radius at interior point $x = 2$_
       #v(0.3em)
       #volume-of-revolution(
         x => calc.sqrt(x),
@@ -134,11 +133,11 @@
 ]
 
 // ── 7. Effect of n-disks ──────────────────────────────────────────────────────
-#demo("7 · Effect of `n-disks` — `show-back: false` for clean comparison")[
+#demo[7 · Effect of `n-disks` — `show-back: false` for a clean comparison][
   #grid(columns: (1fr, 1fr, 1fr), gutter: 1em,
     ..for n in (2, 5, 10) {(
       align(center)[
-        #text(8pt)[n-disks: #n]
+        #text(8pt, raw("n-disks: " + str(n)))
         #v(0.2em)
         #volume-of-revolution(
           x => calc.sqrt(x + 1.0),
@@ -154,7 +153,7 @@
 ]
 
 // ── 8. Full 3D vs front-only (`show-back`) ───────────────────────────────────
-#demo("8 · `show-back: true` (default) vs `show-back: false` — same solid")[
+#demo[8 · `show-back: true` (default) vs `show-back: false` — same solid][
   #grid(columns: (1fr, 1fr), gutter: 1.5em,
     align(center)[
       _`show-back: true` — full 3D perspective_
@@ -188,7 +187,7 @@
 ]
 
 // ── 9. axis-y — revolution around y = c ──────────────────────────────────────
-#demo("9 · `axis-y: 1` — revolution around $y = 1$")[
+#demo[9 · `axis-y: 1` — revolution around $y = 1$][
   #grid(columns: (1fr, 1fr), gutter: 1.5em,
     align(center)[
       _$f(x) = 1 + sqrt(x)$ around $y = 1$_
@@ -200,7 +199,7 @@
         n-disks: 4,
         width: 7.0, height: 3.5,
         label-a: $0$, label-b: $4$,
-        label-f: $1+sqrt(x)$,
+        label-f: $1 + sqrt(x)$,
       )
     ],
     align(center)[
@@ -213,7 +212,7 @@
         n-disks: 4,
         width: 7.0, height: 3.5,
         label-a: $0$, label-b: $3$,
-        label-f: $x+1$,
+        label-f: $x + 1$,
         disk-color: rgb("#e8eaf6"),
         disk-stroke: rgb("#3949ab") + 0.6pt,
         profile-stroke: rgb("#3949ab") + 1.5pt,
@@ -223,7 +222,7 @@
 ]
 
 // ── 10. axis-slope — revolution around oblique axis ───────────────────────────
-#demo("10 · `axis-slope: 1` — revolution around $y = x$")[
+#demo[10 · `axis-slope: 1` — revolution around $y = x$][
   #grid(columns: (1fr, 1fr), gutter: 1.5em,
     align(center)[
       _$f(x) = 2x$ around $y = x$ — cone_
@@ -242,7 +241,7 @@
       )
     ],
     align(center)[
-      _$f(x) = x^2$ around $y = x$ — pinched at $x=1$_
+      _$f(x) = x^2$ around $y = x$ — pinched at $x = 1$_
       #v(0.3em)
       #volume-of-revolution(
         x => x * x,
