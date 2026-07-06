@@ -94,3 +94,25 @@ should equal
   scatter(((1, 1), (2, 2)), mark: "o", mark-stroke: blue),
   data(((1, 3), (3, 1)), mark: "square*", mark-fill: red, connect: true, stroke: red + 0.6pt),
 )
+
+= 9. small data range: axis overshoot stays 0.3cm (Gaussian regression)
+// Regression: with the old data-unit extends, y in [0, 0.5] produced a
+// 6cm-long arrow overshoot above the grid.
+#let gauss(x) = 1 / calc.sqrt(2 * calc.pi) * calc.exp(-0.5 * calc.pow(x - 2.4, 2))
+#plot(
+  xmin: -3, xmax: 5, ymin: 0, ymax: 0.5,
+  ytick-step: 0.2,
+  show-grid: true,
+  xlabel: $V$, ylabel: $p$,
+  fill-area(gauss, domain: (-3, 0), color: red.lighten(30%)),
+  (fn: gauss, stroke: blue + 1.2pt, label: [Gaussian for 2.4V]),
+)
+Explicit legacy (data units) and length forms still work:
+#plot(xmin: -2, xmax: 2, ymin: -2, ymax: 2, width: 3.5, height: 3,
+  axis-x-extend: (0.5, 1), axis-y-extend: (0.5, 1),
+  (fn: x => x,),
+)
+#plot(xmin: -2, xmax: 2, ymin: -2, ymax: 2, width: 3.5, height: 3,
+  axis-x-extend: (0pt, 8mm), axis-y-extend: (0pt, 8mm),
+  (fn: x => x,),
+)
