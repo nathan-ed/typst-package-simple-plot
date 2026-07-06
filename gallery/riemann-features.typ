@@ -166,12 +166,12 @@
         show-origin: false,
         riemann-sum(x => calc.sqrt(x + 0.2), domain: (0.2, 3.2), n: 4, method: "mid",
                     color: luma(225), stroke: luma(80) + 0.5pt,
-                    show-points: true),
+                    show-points: true, point-label: auto),
         (fn: x => calc.sqrt(x + 0.2), domain: (0.0, 3.5), stroke: blue + 1.3pt),
       )
     ],
     align(center)[
-      _`point-label: none` — dots only, no label_
+      _`point-label: none` (default) — dots only, no label_
       #v(0.3em)
       #plot(
         xmin: -0.2, xmax: 3.7, ymin: 0, ymax: 2.4,

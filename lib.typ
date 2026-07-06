@@ -361,6 +361,25 @@
   out
 }
 
+// Clip a Riemann rectangle (data coordinates, y-lo <= y-hi) to the plot
+// window. Returns none when nothing is visible, otherwise the clipped bounds
+// plus which of the four edges survived. An edge that was clipped away lies
+// outside the window and must not be stroked — stroking it would draw a false
+// boundary (e.g. a flat top at ymax pretending to be the rectangle's height).
+#let riemann-clip-rect(xl, xr, y-lo, y-hi, xmin, xmax, ymin, ymax) = {
+  let eps = 1e-9
+  if xr <= xmin + eps or xl >= xmax - eps { return none }
+  if y-hi <= ymin + eps or y-lo >= ymax - eps { return none }
+  (
+    xl: calc.max(xl, xmin), xr: calc.min(xr, xmax),
+    y-lo: calc.max(y-lo, ymin), y-hi: calc.min(y-hi, ymax),
+    left: xl >= xmin - eps,
+    right: xr <= xmax + eps,
+    bottom: y-lo >= ymin - eps,
+    top: y-hi <= ymax + eps,
+  )
+}
+
 // ============================================================================
 // MARKER DRAWING
 // ============================================================================
@@ -888,6 +907,81 @@
     }
     let obstacle-segs = fn-obstacle-segs + guide-obstacle-segs
 
+    // ── Pre-sampled area-fill boxes ────────────────────────────────────────
+    // Coarse canvas-space cover of every area-type fill (Riemann bars,
+    // fill-area, fill-between, fill-closed). Labels never paint their white
+    // background over one of these boxes: the fill is drawn first (area
+    // pass), so the white box would punch a visible hole into it. The label
+    // glyphs themselves still render on top of the fill.
+    let area-boxes = ()
+    for func-spec in all-funcs {
+      if type(func-spec) != dictionary { continue }
+      if "riemann" in func-spec {
+        let r-fn = func-spec.at("riemann")
+        let (d1, d2) = func-spec.at("domain", default: (xmin, xmax))
+        let r-n = func-spec.at("n", default: 4)
+        let r-base = func-spec.at("baseline", default: 0.0)
+        let r-method = func-spec.at("method", default: "right")
+        let r-samples = func-spec.at("samples", default: 20)
+        for r in riemann-heights(r-fn, d1, d2, r-n, r-method, r-samples) {
+          if r.y == none { continue }
+          let c = riemann-clip-rect(r.xl, r.xr,
+            calc.min(r-base, r.y), calc.max(r-base, r.y), xmin, xmax, ymin, ymax)
+          if c == none { continue }
+          let (x1, y1) = to-canvas(c.xl, c.y-lo)
+          let (x2, y2) = to-canvas(c.xr, c.y-hi)
+          area-boxes.push((x1, y1, x2, y2))
+        }
+      } else if "fill" in func-spec or "fill-between" in func-spec or "fill-fn1" in func-spec {
+        let base = func-spec.at("baseline", default: 0.0)
+        let (fn1, fn2) = if "fill" in func-spec {
+          (func-spec.at("fill"), x => base)
+        } else if "fill-between" in func-spec {
+          func-spec.at("fill-between")
+        } else {
+          (func-spec.at("fill-fn1"), func-spec.at("fill-fn2", default: x => 0.0))
+        }
+        let (d1, d2) = func-spec.at("domain", default: (xmin, xmax))
+        let d1 = calc.max(float(d1), xmin)
+        let d2 = calc.min(float(d2), xmax)
+        if d2 - d1 > 1e-9 {
+          let n = 40
+          let step = (d2 - d1) / n
+          for i in range(n) {
+            let xa = d1 + i * step
+            let ya = fn1(xa + step / 2)
+            let yb = fn2(xa + step / 2)
+            if ya == none or yb == none { continue }
+            let (ya, yb) = (float(ya), float(yb))
+            if ya.is-nan() or yb.is-nan() { continue }
+            let (x1, y1) = to-canvas(xa, clamp-y(calc.min(ya, yb)))
+            let (x2, y2) = to-canvas(xa + step, clamp-y(calc.max(ya, yb)))
+            area-boxes.push((x1, y1, x2, y2))
+          }
+        }
+      } else if "fill-closed" in func-spec {
+        let (fx, fy) = func-spec.at("fill-closed")
+        let (t1, t2) = func-spec.at("domain", default: (0.0, 1.0))
+        let n = 40
+        let (bx1, by1, bx2, by2) = (none, none, none, none)
+        for i in range(n + 1) {
+          let t = t1 + i * (t2 - t1) / n
+          let px = fx(t)
+          let py = fy(t)
+          if px == none or py == none { continue }
+          let (px, py) = (float(px), float(py))
+          if px.is-nan() or py.is-nan() { continue }
+          let (cx, cy) = to-canvas(clamp-x(px), clamp-y(py))
+          bx1 = if bx1 == none { cx } else { calc.min(bx1, cx) }
+          by1 = if by1 == none { cy } else { calc.min(by1, cy) }
+          bx2 = if bx2 == none { cx } else { calc.max(bx2, cx) }
+          by2 = if by2 == none { cy } else { calc.max(by2, cy) }
+        }
+        if bx1 != none { area-boxes.push((bx1, by1, bx2, by2)) }
+      }
+    }
+    let label-over-area(b) = area-boxes.any(ab => boxes-overlap(ab, b))
+
     // ── Hide tick labels crossed by a function graph ───────────────────────
     // A tick value whose label box is crossed by a plotted curve is not
     // rendered — unless hiding it would leave the axis with no label at all,
@@ -977,12 +1071,31 @@
       // Flipped-up annotations sit above the axis and cannot collide.
       if riemann-flip-up(r-fn, rd1, rw, r-n, r-base) { continue }
       if show-xi {
+        // Hide every numeric tick label that would overlap an x_i label —
+        // both are centered on the axis, so collision is a distance in cm,
+        // not an exact position match (a tick at 1 collides with x_i = 0.9).
+        for t in x-ticks.ticks {
+          for i in range(r-n + 1) {
+            let xi = rd1 + i * rw
+            if xi < xmin - 0.0001 or xi > xmax + 0.0001 { continue }
+            if calc.abs((t - xi) * x-scale) < 0.45 {
+              hidden-x.push(t)
+              break
+            }
+          }
+        }
+        // x_0 (or any x_i) landing on the y-axis takes the origin's spot
         for i in range(r-n + 1) {
-          let x = rd1 + i * rw
-          if x >= xmin - 0.0001 and x <= xmax + 0.0001 { hidden-x.push(x) }
+          let xi = rd1 + i * rw
+          if xi >= xmin - 0.0001 and xi <= xmax + 0.0001 and calc.abs((xi - y-axis-x) * x-scale) < 0.45 {
+            origin-hidden = true
+          }
         }
       }
-      if show-dx {
+      // Without x_i labels the Δx bracket sits at axis level and covers the
+      // tick labels under its rectangle. (With x_i labels it moves below the
+      // label row, clear of the ticks.)
+      if show-dx and not show-xi {
         let dxi = func-spec.at("dx-rect", default: auto)
         let dxi = if dxi == auto { calc.floor(r-n / 2) } else { dxi }
         for t in x-ticks.ticks {
@@ -1227,16 +1340,26 @@
       // label band stay behind clean digits. The background is only painted
       // when a curve actually crosses the label box — otherwise it would
       // punch a white hole into area fills drawn underneath.
-      let label-crossed(b) = fn-obstacle-segs.any(((p1, p2)) => seg-hits-box(p1, p2, b))
+      // A label paints its background only when a curve crosses it AND it is
+      // not sitting on an area fill (see area-boxes above).
+      let label-crossed(b) = (
+        fn-obstacle-segs.any(((p1, p2)) => seg-hits-box(p1, p2, b))
+          and not label-over-area(b)
+      )
       let tick-text(label, crossed: false) = {
         let t = apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label])
         let bg = s.ticks.at("label-bg", default: white)
         if bg != none and crossed { box(fill: bg, inset: (x: 1pt, y: 0.5pt), t) } else { t }
       }
-      let axis-label-text(label) = {
+      let axis-label-text(label, at: none) = {
         let t = apply-font(text(size: s.labels.size, fill: s.labels.fill)[#label])
         let bg = s.labels.at("bg", default: white)
-        if bg != none { box(fill: bg, inset: 0.5pt, t) } else { t }
+        // Coarse box around the label position, wide enough for any anchor.
+        let over-area = if at == none { false } else {
+          let (px, py) = at
+          label-over-area((px - 0.5, py - 0.35, px + 0.5, py + 0.35))
+        }
+        if bg != none and not over-area { box(fill: bg, inset: 0.5pt, t) } else { t }
       }
 
       // Estimated boxes of the drawn x tick labels (and origin label), used to
@@ -1376,7 +1499,7 @@
         }
         let x-lbl-anchor = if xlabel-anchor == auto { default-anchor } else { xlabel-anchor }
         let (ox, oy) = xlabel-offset
-        content((lx + ox, ly + oy), axis-label-text(xlabel), anchor: x-lbl-anchor)
+        content((lx + ox, ly + oy), axis-label-text(xlabel, at: (lx + ox, ly + oy)), anchor: x-lbl-anchor)
       }
 
       if ylabel != none {
@@ -1392,7 +1515,7 @@
         }
         let y-lbl-anchor = if ylabel-anchor == auto { default-anchor } else { ylabel-anchor }
         let (ox, oy) = ylabel-offset
-        content((lx + ox, ly + oy), axis-label-text(ylabel), anchor: y-lbl-anchor)
+        content((lx + ox, ly + oy), axis-label-text(ylabel, at: (lx + ox, ly + oy)), anchor: y-lbl-anchor)
       }
     }
 
@@ -1620,7 +1743,7 @@
         let r-show-points  = func-spec.at("show-points", default: false)
         let r-point-color  = func-spec.at("point-color", default: rgb("#c94a00"))
         let r-point-size   = func-spec.at("point-size", default: 0.07)
-        let r-point-label  = func-spec.at("point-label", default: none)
+        let r-point-label  = func-spec.at("point-label", default: none)  // auto = method text
         let r-point-lpos   = func-spec.at("point-label-pos", default: auto)
         let r-show-dx      = func-spec.at("show-dx", default: false)
         let r-dx-rect      = func-spec.at("dx-rect", default: auto)
@@ -1643,14 +1766,22 @@
             eval-pts.push(to-canvas(r.xeval, r.y))
           }
           if r.y != none {
-            // Clip the rectangle to the plot area
-            let xl-c = clamp-x(r.xl)
-            let xr-c = clamp-x(r.xr)
-            if xr-c - xl-c > 1e-9 {
-              let (cxl, cybot) = to-canvas(xl-c, clamp-y(r-base))
-              let (cxr, cytop) = to-canvas(xr-c, clamp-y(r.y))
-              rect((cxl, cybot), (cxr, cytop),
-                fill: series-paint(func-spec, fill-color), stroke: rect-stroke)
+            // Clip the rectangle to the plot window; stroke only the edges
+            // that survived so a cut-off bar reads as "continues beyond the
+            // window" instead of showing a false boundary.
+            let c = riemann-clip-rect(
+              r.xl, r.xr,
+              calc.min(r-base, r.y), calc.max(r-base, r.y),
+              xmin, xmax, ymin, ymax)
+            if c != none {
+              let (cx1, cy1) = to-canvas(c.xl, c.y-lo)
+              let (cx2, cy2) = to-canvas(c.xr, c.y-hi)
+              rect((cx1, cy1), (cx2, cy2),
+                fill: series-paint(func-spec, fill-color), stroke: none)
+              if c.left { line((cx1, cy1), (cx1, cy2), stroke: rect-stroke) }
+              if c.right { line((cx2, cy1), (cx2, cy2), stroke: rect-stroke) }
+              if c.bottom { line((cx1, cy1), (cx2, cy1), stroke: rect-stroke) }
+              if c.top { line((cx1, cy2), (cx2, cy2), stroke: rect-stroke) }
             }
           }
         }
@@ -1667,10 +1798,17 @@
           let xr = d1 + (dx-di + 1) * w
           let (cxl, cy-base) = to-canvas(clamp-x(xl), clamp-y(r-base))
           let (cxr, _)       = to-canvas(clamp-x(xr), clamp-y(r-base))
-          let tick-drop = 0.10
-          let arrow-y   = cy-base + a-dir * 0.18
-          line((cxl, cy-base + a-dir * 0.02), (cxl, cy-base + a-dir * tick-drop), stroke: black + 0.5pt)
-          line((cxr, cy-base + a-dir * 0.02), (cxr, cy-base + a-dir * tick-drop), stroke: black + 0.5pt)
+          // With x_i labels shown, the bracket drops below the label row
+          // (delimiters crossing the arrow line, dimension-line style) so no
+          // label has to be skipped; alone, it hugs the axis.
+          let (tick-from, tick-to, arrow-off) = if r-show-xi {
+            (0.68, 0.84, 0.76)
+          } else {
+            (0.02, 0.10, 0.18)
+          }
+          let arrow-y = cy-base + a-dir * arrow-off
+          line((cxl, cy-base + a-dir * tick-from), (cxl, cy-base + a-dir * tick-to), stroke: black + 0.5pt)
+          line((cxr, cy-base + a-dir * tick-from), (cxr, cy-base + a-dir * tick-to), stroke: black + 0.5pt)
           line((cxl, arrow-y), (cxr, arrow-y),
                mark: (start: (symbol: "stealth", fill: black, scale: 0.35),
                       end:   (symbol: "stealth", fill: black, scale: 0.35)),
@@ -1682,8 +1820,6 @@
         // ── x_i labels ──────────────────────────────────────────────────────
         if r-show-xi {
           for i in range(r-n + 1) {
-            // Skip the two indices that straddle the Δx bracket to avoid overlap
-            if r-show-dx and (i == dx-di or i == dx-di + 1) { continue }
             let x = d1 + i * w
             // Clip labels to the x-range
             if x < xmin - 1e-9 or x > xmax + 1e-9 { continue }
@@ -1703,8 +1839,11 @@
             } else {
               xi-lbl
             }
-            // Always shift right when xi label lands on the y-axis to avoid overlap
-            let x-shift = if calc.abs(x - y-axis-x) < 0.001 { 0.35 } else { 0.0 }
+            // Shift right when the xi label lands on the y-axis AND the axis
+            // line actually extends into the label row (e.g. ymin < 0 with
+            // baseline 0); otherwise the label can sit centered on the axis.
+            let axis-in-row = if flip-up { ymax > r-base + 1e-9 } else { ymin < r-base - 1e-9 }
+            let x-shift = if axis-in-row and calc.abs(x - y-axis-x) < 0.001 { 0.35 } else { 0.0 }
             content((cx + x-shift, cy + a-dir * 0.20), apply-font(lbl),
                     anchor: if flip-up { "south" } else { "north" })
           }
@@ -1729,8 +1868,13 @@
             } else {
               to-canvas(r-point-lpos.at(0), r-point-lpos.at(1))
             }
-            // Arrows first so dots render on top
-            for (px, py) in eval-pts {
+            // Arrows first so dots render on top — only to the few nearest
+            // dots; one arrow per dot criss-crosses the whole plot.
+            let by-dist = eval-pts.sorted(key: p => {
+              let (px, py) = p
+              (px - lx) * (px - lx) + (py - ly) * (py - ly)
+            })
+            for (px, py) in by-dist.slice(0, calc.min(3, by-dist.len())) {
               line((lx, ly), (px, py),
                    mark: (end: (symbol: "stealth", fill: black, scale: 0.35)),
                    stroke: black + 0.5pt)
@@ -3052,7 +3196,8 @@
 /// - show-points: draw a dot at each evaluation point (left/right/mid only)
 /// - point-color: fill color of the dots (default dark orange)
 /// - point-size: radius of dots in cm (default 0.07)
-/// - point-label: content label with arrows to dots; `auto` = method-based text, `none` = no label
+/// - point-label: content label with arrows to the nearest dots; `none` (default) = dots only,
+///   `auto` = method-based text ("Left endpoints", …)
 /// - point-label-pos: (x,y) in data coords for the label; `auto` = upper-right of dots
 /// - show-dx: draw a Δx dimension bracket under one rectangle
 /// - dx-rect: index of rectangle to annotate (0-based); `auto` = middle rectangle
@@ -3078,7 +3223,7 @@
   show-points: false,
   point-color: rgb("#c94a00"),
   point-size: 0.07,
-  point-label: auto,
+  point-label: none,
   point-label-pos: auto,
   show-dx: false,
   dx-rect: auto,

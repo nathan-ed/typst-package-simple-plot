@@ -279,7 +279,7 @@ them clear of the tick numbers (which sit below / left of the axis).
     n: 6,
     method: "left",
     color: blue.lighten(75%),
-    show-points: true,       // dots at evaluation points with arrows
+    show-points: true,       // dots at evaluation points
     show-dx: true,           // Δx bracket under one rectangle
     show-xi: true,           // x₀, x₁, …, x₆ labels along axis
   ),
@@ -305,7 +305,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 | `show-points` | bool | false | Draw dot at each evaluation point |
 | `point-color` | color | `rgb("#c94a00")` | Dot fill color |
 | `point-size` | float | 0.07 | Dot radius in cm |
-| `point-label` | content/auto/none | `auto` | Label with arrows to dots; `auto` = method name |
+| `point-label` | content/auto/none | `none` | Label with arrows to the nearest dots; `auto` = method name |
 | `point-label-pos` | array/auto | `auto` | `(x, y)` in data coords; `auto` = upper-right of dots |
 | `show-dx` | bool | false | Draw Δx dimension bracket under one rectangle |
 | `dx-rect` | int/auto | `auto` | Rectangle index to annotate (0-based); `auto` = middle |
@@ -461,6 +461,11 @@ First stable release. The API documented in the manual is now considered stable.
 - **Zoom insets re-render every series type** — `fill-area`, `area-between`, `fill-closed`, `riemann-sum` rectangles, `vline`/`hline` and parametric curves now appear inside `zoom()` insets (previously only function curves and point series did), correctly clipped to both the rectangular and the circular lens
 
 #### Fixed
+- **Riemann rectangles cut by the plot window no longer draw false edges** — a bar extending past `xmax` (e.g. decimal `xmax: 2.5` with `domain: (0, 3)`) or above `ymax` was clamped and then stroked on all four sides, showing a wrong width and a flat top at the window boundary; clipped edges are now left open so the bar reads as continuing beyond the window, and bars fully outside are dropped
+- **`show-xi` labels no longer collide with numeric tick labels** — every tick label *near* an `x_i` label (measured in cm, not only exact position matches) is hidden, and `x_0` takes the origin's `0` spot instead of being shifted into `x_1`
+- **`show-dx` + `show-xi` keep all labels** — the `Δx` bracket now drops below the `x_i` row (dimension-line style) instead of silently skipping the two straddling `x_i` labels
+- **`show-points` no longer sprays a label by default** — `point-label` defaults to `none` (dots only); when a label is requested, arrows point to the 3 nearest dots instead of criss-crossing the plot
+- **Label backgrounds no longer punch white holes into area fills** — tick labels and axis-name labels suppress their white background when they sit on a Riemann bar or an area fill (the digits print directly on the fill)
 - **`compiler` requirement corrected to `0.13.0`** — the hatch patterns use `tiling()`, which does not exist before Typst 0.13; the manifest previously claimed 0.11.0
 - **Raw `(annotation: ...)` dicts default to 9pt** — aligned with the `note()` helper, which already used 9pt
 - **Axis arrow extensions are no longer scale-dependent** — `axis-x-extend` / `axis-y-extend` default to absolute lengths (`0.3cm`), so a small data range (e.g. y from 0 to 0.5) no longer produces a huge axis overshoot; lengths are accepted for explicit values, bare numbers keep the legacy data-unit meaning

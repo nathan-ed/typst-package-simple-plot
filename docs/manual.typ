@@ -1269,7 +1269,7 @@ riemann-sum(
   domain: (0.0, 3.0),
   n: 6, method: "right",
   color: blue.lighten(80%),
-  show-points: true,           // dots at evaluation points with arrows
+  show-points: true,           // dots at evaluation points
   show-dx: true, dx-rect: 2,   // Δx bracket under rectangle 2
   show-xi: true,               // x₀ … x₆ labels along the axis
 )
@@ -1666,7 +1666,7 @@ Each plot item is a dictionary with these fields:
   [`show-points`], [bool], [false], [Draw a dot at each evaluation point],
   [`point-color`], [color], [`rgb("#c94a00")`], [Dot fill color],
   [`point-size`], [float], [0.07], [Dot radius in cm],
-  [`point-label`], [content/auto/none], [`auto`], [Arrow label near dots; `auto` = method name, `none` = dots only],
+  [`point-label`], [content/auto/none], [`none`], [Arrow label near dots; `auto` = method name, `none` = dots only],
   [`point-label-pos`], [array/auto], [`auto`], [`(x, y)` in data coords; `auto` = upper-right of dots],
   [`show-dx`], [bool], [false], [Draw a Δx dimension bracket under one rectangle],
   [`dx-rect`], [int/auto], [`auto`], [Rectangle to annotate (0-based); `auto` = middle rectangle],
