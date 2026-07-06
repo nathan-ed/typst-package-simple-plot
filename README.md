@@ -206,8 +206,8 @@ Control the placement of function labels using `label-pos` and `label-side`:
 | `grid-label-break` | bool | true | Gap in grid lines around tick labels |
 | `axis-x-pos` | float/str/none | 0 | X-axis position: value, `"bottom"`, `"center"`; `none` hides the axis |
 | `axis-y-pos` | float/str/none | 0 | Y-axis position: value, `"left"`, `"center"`; `none` hides the axis |
-| `axis-x-extend` | float/array | (0, 0.5) | Extend X-axis beyond grid: value or `(left, right)` |
-| `axis-y-extend` | float/array | (0, 0.5) | Extend Y-axis beyond grid: value or `(bottom, top)` |
+| `axis-x-extend` | length/float/array | (0pt, 0.3cm) | Extend X-axis beyond the grid: value or `(left, right)`. Lengths are absolute; bare numbers are data units (legacy) |
+| `axis-y-extend` | length/float/array | (0pt, 0.3cm) | Extend Y-axis beyond the grid: value or `(bottom, top)`. Lengths are absolute; bare numbers are data units (legacy) |
 | `show-origin` | bool | true | Show "0" label at origin |
 | `origin-label-offset` | array | (-0.11, -0.11) | Origin "0" label offset from (0,0) in cm |
 | `origin-label-anchor` | str | "north-east" | Origin "0" label anchor |
@@ -463,6 +463,7 @@ First stable release. The API documented in the manual is now considered stable.
 #### Fixed
 - **`compiler` requirement corrected to `0.13.0`** — the hatch patterns use `tiling()`, which does not exist before Typst 0.13; the manifest previously claimed 0.11.0
 - **Raw `(annotation: ...)` dicts default to 9pt** — aligned with the `note()` helper, which already used 9pt
+- **Axis arrow extensions are no longer scale-dependent** — `axis-x-extend` / `axis-y-extend` default to absolute lengths (`0.3cm`), so a small data range (e.g. y from 0 to 0.5) no longer produces a huge axis overshoot; lengths are accepted for explicit values, bare numbers keep the legacy data-unit meaning
 - **Thick hatch strokes no longer show holes** — hatch lines are extended past the tile boundary and repeated at the opposite corners, so `hatch-stroke` thicknesses comparable to `hatch-spacing` tile seamlessly
 - `plot-fn` now forwards `samples` to the drawn curve (it was only used for the auto y-range)
 - `zoom(box-fill: none)` now really makes the inset background transparent (the value was previously dropped and fell back to white)

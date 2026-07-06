@@ -491,7 +491,7 @@ Position axes at origin (default), bottom/left, or custom values:
 
 == Axis Extension
 
-By default, axes extend 0.5 units beyond the grid on the arrow side. Customize with `axis-x-extend` and `axis-y-extend`:
+By default, axes extend 0.3 cm beyond the grid on the arrow side, independent of the data scale. Customize with `axis-x-extend` and `axis-y-extend` — a length (`0.5cm`, `3mm`) is absolute, a bare number is interpreted in data units (legacy):
 
 #example(
   [```typst
@@ -1556,8 +1556,8 @@ All parameters are named and optional; series specs are passed positionally. Unk
   [`ylabel-offset`], [array], [(-0.05, 0.0)], [Y label offset (cm)],
   [`axis-x-pos`], [string/float/none], [0], ["bottom", "center", a y-value, or `none` to hide the axis],
   [`axis-y-pos`], [string/float/none], [0], ["left", "center", an x-value, or `none` to hide the axis],
-  [`axis-x-extend`], [float/array], [(0, 0.5)], [X-axis extension (left, right)],
-  [`axis-y-extend`], [float/array], [(0, 0.5)], [Y-axis extension (bottom, top)],
+  [`axis-x-extend`], [length/float/array], [(0pt, 0.3cm)], [X-axis extension (left, right); lengths are absolute, bare numbers are data units (legacy)],
+  [`axis-y-extend`], [length/float/array], [(0pt, 0.3cm)], [Y-axis extension (bottom, top); lengths are absolute, bare numbers are data units (legacy)],
 )
 
 #v(0.5em)

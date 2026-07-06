@@ -453,8 +453,11 @@
 /// - unit-label-only (auto, bool): Show only "1" label on axes (not -1), useful for minimal style (default: false)
 /// - axis-x-pos (auto, none, float, str): X-axis y-position ("bottom", "center", or value; none = hide the axis)
 /// - axis-y-pos (auto, none, float, str): Y-axis x-position ("left", "center", or value; none = hide the axis)
-/// - axis-x-extend (auto, float, array): X-axis extension beyond plot (value or (left, right))
-/// - axis-y-extend (auto, float, array): Y-axis extension beyond plot (value or (bottom, top))
+/// - axis-x-extend (auto, length, float, array): X-axis extension beyond the plot,
+///   value or (left, right) — lengths are absolute (scale-independent), bare
+///   numbers are data units (legacy). Default: (0pt, 0.3cm)
+/// - axis-y-extend (auto, length, float, array): Y-axis extension beyond the plot,
+///   value or (bottom, top) — same conventions as axis-x-extend
 /// - show-origin (auto, bool): Show "0" label at origin (default: true)
 /// - origin-label-offset (auto, array): Origin label offset from (0,0) in cm (default: (-0.11, -0.11))
 /// - origin-label-anchor (auto, str): Origin label anchor (default: "north-east")
@@ -568,8 +571,8 @@
   let unit-label-only = resolve(unit-label-only, "unit-label-only", false)
   let axis-x-pos = resolve(axis-x-pos, "axis-x-pos", 0)
   let axis-y-pos = resolve(axis-y-pos, "axis-y-pos", 0)
-  let axis-x-extend = resolve(axis-x-extend, "axis-x-extend", (0, 0.5))
-  let axis-y-extend = resolve(axis-y-extend, "axis-y-extend", (0, 0.5))
+  let axis-x-extend = resolve(axis-x-extend, "axis-x-extend", (0pt, 0.3cm))
+  let axis-y-extend = resolve(axis-y-extend, "axis-y-extend", (0pt, 0.3cm))
   let show-origin = resolve(show-origin, "show-origin", true)
   let origin-label-offset = resolve(origin-label-offset, "origin-label-offset", auto)
   let origin-label-anchor = resolve(origin-label-anchor, "origin-label-anchor", auto)
@@ -624,6 +627,14 @@
   let x-scale = width / (xmax - xmin)
   let y-scale = height / (ymax - ymin)
 
+  // Axis extensions normalized to canvas cm. A length (3mm, 0.4cm) is
+  // absolute and scale-independent; a bare number keeps the historical
+  // meaning of data units (multiplied by the axis scale) — that meaning
+  // breaks down on small data ranges, hence the length-based default.
+  let ext-to-cm(v, scale) = if type(v) == length { v.cm() } else { v * scale }
+  let x-extend = (ext-to-cm(x-extend.at(0), x-scale), ext-to-cm(x-extend.at(1), x-scale))
+  let y-extend = (ext-to-cm(y-extend.at(0), y-scale), ext-to-cm(y-extend.at(1), y-scale))
+
   let to-canvas(x, y) = {
     ((x - xmin) * x-scale, (y - ymin) * y-scale)
   }
@@ -655,7 +666,7 @@
   // When the max value lands exactly on a tick, keep that tick/label instead of
   // hiding it under the axis arrow, and make sure the axis is pushed a little
   // past it (e.g. xmax = 5 → axis to 5.2) so the arrow clears the label.
-  let end-tick-overshoot = 0.2
+  let end-tick-overshoot = 0.12  // cm
   let xmax-on-tick = show-end-ticks and x-ticks.ticks.any(t => calc.abs(t - xmax) < 0.0001)
   let ymax-on-tick = show-end-ticks and y-ticks.ticks.any(t => calc.abs(t - ymax) < 0.0001)
   if xmax-on-tick { x-extend.at(1) = calc.max(x-extend.at(1), end-tick-overshoot) }
@@ -768,10 +779,10 @@
     }
 
     // Extended bounds for clipping area
-    let x-clip-min = xmin - x-extend.at(0)
-    let x-clip-max = xmax + x-extend.at(1)
-    let y-clip-min = ymin - y-extend.at(0)
-    let y-clip-max = ymax + y-extend.at(1)
+    let x-clip-min = xmin - x-extend.at(0) / x-scale
+    let x-clip-max = xmax + x-extend.at(1) / x-scale
+    let y-clip-min = ymin - y-extend.at(0) / y-scale
+    let y-clip-max = ymax + y-extend.at(1) / y-scale
 
     // Sampling bounds (extend further so lines reach clip edges)
     let sample-margin = calc.max(xmax - xmin, ymax - ymin) * 0.5
@@ -1199,16 +1210,16 @@
       if draw-x-axis {
         let (x1, y-ax) = to-canvas(xmin, x-axis-y)
         let (x2, _) = to-canvas(xmax, x-axis-y)
-        let x1-ext = x1 - x-extend.at(0) * x-scale
-        let x2-ext = x2 + x-extend.at(1) * x-scale
+        let x1-ext = x1 - x-extend.at(0)
+        let x2-ext = x2 + x-extend.at(1)
         line((x1-ext, y-ax), (x2-ext, y-ax), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
       }
 
       if draw-y-axis {
         let (x-ax, y1) = to-canvas(y-axis-x, ymin)
         let (_, y2) = to-canvas(y-axis-x, ymax)
-        let y1-ext = y1 - y-extend.at(0) * y-scale
-        let y2-ext = y2 + y-extend.at(1) * y-scale
+        let y1-ext = y1 - y-extend.at(0)
+        let y2-ext = y2 + y-extend.at(1)
         line((x-ax, y1-ext), (x-ax, y2-ext), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
       }
 
@@ -1355,7 +1366,7 @@
       if xlabel != none {
         let (lx, ly, default-anchor) = if xlabel-pos == "end" {
           let (base-x, base-y) = to-canvas(xmax, x-axis-y)
-          (base-x + x-extend.at(1) * x-scale, base-y, "south-east")
+          (base-x + x-extend.at(1), base-y, "south-east")
         } else if xlabel-pos == "center" {
           let (cx, cy) = to-canvas((xmin + xmax) / 2, x-axis-y); (cx, cy, "north")
         } else if type(xlabel-pos) == array {
@@ -1371,7 +1382,7 @@
       if ylabel != none {
         let (lx, ly, default-anchor) = if ylabel-pos == "end" {
           let (base-x, base-y) = to-canvas(y-axis-x, ymax)
-          (base-x, base-y + y-extend.at(1) * y-scale, "north-west")
+          (base-x, base-y + y-extend.at(1), "north-west")
         } else if ylabel-pos == "center" {
           let (cx, cy) = to-canvas(y-axis-x, (ymin + ymax) / 2); (cx, cy, "east")
         } else if type(ylabel-pos) == array {
@@ -1831,10 +1842,10 @@
       let (_, vy2) = to-canvas(y-axis-x, ymax)
       let axis-segs = ()
       if draw-x-axis {
-        axis-segs.push(((ax1 - x-extend.at(0) * x-scale, ay), (ax2 + x-extend.at(1) * x-scale, ay)))
+        axis-segs.push(((ax1 - x-extend.at(0), ay), (ax2 + x-extend.at(1), ay)))
       }
       if draw-y-axis {
-        axis-segs.push(((vx, vy1 - y-extend.at(0) * y-scale), (vx, vy2 + y-extend.at(1) * y-scale)))
+        axis-segs.push(((vx, vy1 - y-extend.at(0)), (vx, vy2 + y-extend.at(1))))
       }
 
       // Tick-label boxes actually drawn (hidden ones excluded).
@@ -1856,7 +1867,7 @@
       if xlabel != none and xlabel-pos == "end" {
         let (bx, by) = to-canvas(xmax, x-axis-y)
         let (ox, oy) = xlabel-offset
-        let ax = bx + x-extend.at(1) * x-scale + ox
+        let ax = bx + x-extend.at(1) + ox
         let ay = by + oy
         let ms = measure(apply-font(text(size: s.labels.size)[#xlabel]))
         // anchored "south-east": box extends left and up from the point
@@ -1866,7 +1877,7 @@
         let (bx, by) = to-canvas(y-axis-x, ymax)
         let (ox, oy) = ylabel-offset
         let ax = bx + ox
-        let ay = by + y-extend.at(1) * y-scale + oy
+        let ay = by + y-extend.at(1) + oy
         let ms = measure(apply-font(text(size: s.labels.size)[#ylabel]))
         // anchored "north-west": box extends right and down from the point
         tick-boxes.push((ax - 0.05, ay - ms.height / 1cm - 0.02, ax + ms.width / 1cm + 0.05, ay + 0.02))
@@ -1876,7 +1887,7 @@
       // Horizontal bounds are computed per label: an end label may stick out
       // of the grid by its own width (the canvas grows around it), pgfplots-style.
       let vis-y1 = -0.25
-      let vis-y2 = height + y-extend.at(1) * y-scale + 0.35
+      let vis-y2 = height + y-extend.at(1) + 0.35
 
       // Box of a label of size (w, h) anchored at point (px, py).
       let anchor-box(anchor, px, py, w, h) = {
@@ -1898,7 +1909,7 @@
         let w = m.width / 1cm + 2 * pad
         let h = m.height / 1cm + 2 * pad
         let vis-x1 = -(w + 0.15)
-        let vis-x2 = width + x-extend.at(1) * x-scale + w + 0.15
+        let vis-x2 = width + x-extend.at(1) + w + 0.15
 
         let score-box(b) = {
           // Shrink slightly so a corner grazing its own curve doesn't count.
