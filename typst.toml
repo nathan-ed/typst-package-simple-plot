@@ -1,6 +1,6 @@
 [package]
 name = "simple-plot"
-version = "0.9.1"
+version = "1.0.0"
 entrypoint = "lib.typ"
 authors = ["Nathan Scheinmann"]
 license = "MIT"
@@ -9,5 +9,5 @@ repository = "https://github.com/nathan-ed/typst-package-simple-plot"
 keywords = ["plot", "graph", "function", "math", "visualization", "chart", "axis"]
 categories = ["visualization"]
 disciplines = ["mathematics", "physics", "engineering"]
-compiler = "0.11.0"
+compiler = "0.13.0"
 exclude = ["docs/*", "gallery", "tests", "*.pdf"]

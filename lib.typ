@@ -10,6 +10,24 @@
 
 #let _plot-defaults = state("simple-plot-defaults", (:))
 
+// Every named parameter of plot() that set-plot-defaults may override,
+// plus "style". Keep in sync with the plot() signature.
+#let _plot-default-keys = (
+  "xmin", "xmax", "ymin", "ymax", "width", "height", "scale",
+  "xlabel", "ylabel", "xlabel-pos", "ylabel-pos",
+  "xlabel-anchor", "ylabel-anchor", "xlabel-offset", "ylabel-offset",
+  "xtick", "ytick", "xtick-step", "ytick-step",
+  "xtick-labels", "ytick-labels", "xtick-label-step", "ytick-label-step",
+  "show-grid", "minor-grid-step", "grid-label-break", "unit-label-only",
+  "axis-x-pos", "axis-y-pos", "axis-x-extend", "axis-y-extend",
+  "show-origin", "origin-label-offset", "origin-label-anchor",
+  "origin-leader", "origin-leader-stroke", "origin-leader-gap",
+  "origin-leader-end-gap",
+  "tick-label-size", "axis-label-size", "font",
+  "show-end-ticks", "min-tick-spacing", "hide-crossed-tick-labels",
+  "style",
+)
+
 /// Set default values for all subsequent plots.
 ///
 /// Example:
@@ -17,6 +35,10 @@
 /// #set-plot-defaults(width: 10, height: 8, show-grid: true)
 /// ```
 #let set-plot-defaults(..args) = {
+  for key in args.named().keys() {
+    assert(key in _plot-default-keys,
+      message: "set-plot-defaults: unknown plot option: " + key)
+  }
   _plot-defaults.update(current => {
     let new = current
     for (key, value) in args.named() {
@@ -138,6 +160,27 @@
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
+
+// Canvas dimensions (width, height, ...) accept plain numbers (interpreted
+// as cm, the historical behavior) or absolute lengths (2cm, 30mm, 12pt, ...).
+// Returns a float in cm.
+#let to-cm(v) = if type(v) == length { v.cm() } else { v }
+
+// Resolve a function passed either positionally or as the named `fn:`
+// argument (helpers accept both, matching the `(fn: ..., ...)` series dicts).
+#let _resolve-fn(name, args, fn) = {
+  assert(args.named().len() == 0,
+    message: name + ": unknown named arguments: " + args.named().keys().join(", "))
+  if fn != none {
+    assert(args.pos().len() == 0,
+      message: name + ": pass the function either positionally or as fn:, not both")
+    fn
+  } else {
+    assert(args.pos().len() == 1,
+      message: name + ": expected one function (positional or fn:)")
+    args.pos().first()
+  }
+}
 
 // Clip a line segment to a rectangle (all 4 edges) using Liang-Barsky
 #let clip-segment(p1, p2, xmin, ymin, xmax, ymax) = {
@@ -265,11 +308,9 @@
 // widens to the next nice step (2, 5, 10, ...) when the canvas scale would
 // place ticks closer than min-spacing (cm) apart — keeps labels readable on
 // large ranges (e.g. y from -80 to 30 on a 5 cm axis).
-#let generate-ticks(min, max, step: auto, count: auto, scale: none, min-spacing: 0.4) = {
+#let generate-ticks(min, max, step: auto, scale: none, min-spacing: 0.4) = {
   let actual-step = if step != auto {
     step
-  } else if count != auto {
-    (max - min) / count
   } else if scale != none {
     calc.max(1, nice-step(min-spacing / scale))
   } else {
@@ -288,11 +329,43 @@
   (ticks: ticks, step: actual-step)
 }
 
+// Riemann rectangle geometry: for each of the `n` subintervals of (d1, d2),
+// the bounds, the evaluation point (none for lower/upper methods) and the
+// rectangle height (none where fn is undefined). Shared by the main renderer
+// and the zoom-inset re-render.
+#let riemann-heights(fn, d1, d2, n, method, samples) = {
+  let w = (d2 - d1) / n
+  let out = ()
+  for i in range(n) {
+    let xl = d1 + i * w
+    let xr = d1 + (i + 1) * w
+    let (xeval, y) = if method == "lower" or method == "upper" {
+      let sub-ys = ()
+      for j in range(samples + 1) {
+        let x = xl + j * (xr - xl) / samples
+        let v = fn(x)
+        if v != none and not float(v).is-nan() { sub-ys.push(float(v)) }
+      }
+      if sub-ys.len() == 0 { (none, none) }
+      else if method == "lower" { (none, calc.min(..sub-ys)) }
+      else { (none, calc.max(..sub-ys)) }
+    } else {
+      let xe = if method == "left" { xl }
+               else if method == "right" { xr }
+               else { (xl + xr) / 2.0 }
+      let ev = fn(xe)
+      if ev == none or float(ev).is-nan() { (xe, none) } else { (xe, float(ev)) }
+    }
+    out.push((xl: xl, xr: xr, xeval: xeval, y: y))
+  }
+  out
+}
+
 // ============================================================================
 // MARKER DRAWING
 // ============================================================================
 
-#let draw-marker(ctx, pos, marker-type, size, fill-color, stroke-style) = {
+#let draw-marker(pos, marker-type, size, fill-color, stroke-style) = {
   import cetz.draw: *
 
   let (cx, cy) = pos
@@ -355,8 +428,8 @@
 /// - xmax (auto, float): Maximum x value
 /// - ymin (auto, float): Minimum y value
 /// - ymax (auto, float): Maximum y value
-/// - width (auto, float): Plot width in cm
-/// - height (auto, float): Plot height in cm
+/// - width (auto, float, length): Plot width — a length (2cm, 30mm, ...) or a number in cm
+/// - height (auto, float, length): Plot height — a length (2cm, 30mm, ...) or a number in cm
 /// - scale (auto, float): Scale factor for the entire plot (default: 1)
 /// - xlabel (auto, content): X-axis label
 /// - ylabel (auto, content): Y-axis label
@@ -378,8 +451,8 @@
 /// - minor-grid-step (auto, int): Minor grid subdivisions per major tick (default: 5)
 /// - grid-label-break (auto, bool): Break grid lines around tick labels (default: true)
 /// - unit-label-only (auto, bool): Show only "1" label on axes (not -1), useful for minimal style (default: false)
-/// - axis-x-pos (auto, float, str): X-axis y-position ("bottom", "center", or value)
-/// - axis-y-pos (auto, float, str): Y-axis x-position ("left", "center", or value)
+/// - axis-x-pos (auto, none, float, str): X-axis y-position ("bottom", "center", or value; none = hide the axis)
+/// - axis-y-pos (auto, none, float, str): Y-axis x-position ("left", "center", or value; none = hide the axis)
 /// - axis-x-extend (auto, float, array): X-axis extension beyond plot (value or (left, right))
 /// - axis-y-extend (auto, float, array): Y-axis extension beyond plot (value or (bottom, top))
 /// - show-origin (auto, bool): Show "0" label at origin (default: true)
@@ -396,6 +469,10 @@
 /// - show-end-ticks (auto, bool): When the max value lands on a tick, keep that
 ///   tick/label (e.g. xmax = 5 shows "5") and push the axis slightly past it so
 ///   the arrow clears the label (default: true)
+/// - min-tick-spacing (auto, float): Minimum spacing between auto ticks in cm before
+///   the step widens to the next nice value (default: 0.4)
+/// - hide-crossed-tick-labels (auto, bool): Hide tick labels crossed by a plotted
+///   curve (default: true)
 /// - style (none, dictionary): Style overrides
 /// - ..functions: Function/data specifications to plot
 #let plot(
@@ -447,6 +524,11 @@
   series: none,
   ..functions,
 ) = context {
+  // Named arguments not in the signature would silently land in the
+  // `..functions` sink — catch typos (e.g. `xtick-lables`) instead.
+  assert(functions.named().len() == 0,
+    message: "plot: unknown named arguments: " + functions.named().keys().join(", "))
+
   let defaults = _plot-defaults.get()
 
   let resolve(val, key, fallback) = {
@@ -459,8 +541,8 @@
   let xmax = resolve(xmax, "xmax", 5)
   let ymin = resolve(ymin, "ymin", -5)
   let ymax = resolve(ymax, "ymax", 5)
-  let width = resolve(width, "width", 6)
-  let height = resolve(height, "height", 6)
+  let width = to-cm(resolve(width, "width", 6))
+  let height = to-cm(resolve(height, "height", 6))
   let scale = resolve(scale, "scale", 1)
   let width = width * scale
   let height = height * scale
@@ -546,13 +628,21 @@
     ((x - xmin) * x-scale, (y - ymin) * y-scale)
   }
 
-  let x-axis-y = if axis-x-pos == "bottom" { ymin }
+  // `none` hides the axis entirely (line, arrow, ticks, labels).
+  let draw-x-axis = axis-x-pos != none
+  let draw-y-axis = axis-y-pos != none
+  let x-axis-y = if axis-x-pos == none or axis-x-pos == "bottom" { ymin }
                  else if axis-x-pos == "center" { 0 }
                  else { calc.max(ymin, calc.min(ymax, axis-x-pos)) }
 
-  let y-axis-x = if axis-y-pos == "left" { xmin }
+  let y-axis-x = if axis-y-pos == none or axis-y-pos == "left" { xmin }
                  else if axis-y-pos == "center" { 0 }
                  else { calc.max(xmin, calc.min(xmax, axis-y-pos)) }
+
+  // A hidden axis carries no name label and no origin "0".
+  let xlabel = if draw-x-axis { xlabel } else { none }
+  let ylabel = if draw-y-axis { ylabel } else { none }
+  let show-origin = show-origin and draw-x-axis and draw-y-axis
 
   let x-ticks = if xtick == none { (ticks: (), step: 1) }
                 else if xtick == auto { generate-ticks(xmin, xmax, step: xtick-step, scale: x-scale, min-spacing: min-tick-spacing) }
@@ -584,33 +674,52 @@
     let make-hatch-pattern(style, spacing, stroke-style) = {
       if style == none { return none }
       let s = spacing
-      if style == "ne" {
-        tiling(size: (s, s))[
-          #place(native-line(start: (0pt, s), end: (s, 0pt), stroke: stroke-style))
-        ]
-      } else if style == "nw" {
-        tiling(size: (s, s))[
-          #place(native-line(start: (0pt, 0pt), end: (s, s), stroke: stroke-style))
-        ]
-      } else if style == "h" {
-        tiling(size: (s, s))[
-          #place(native-line(start: (0pt, s / 2), end: (s, s / 2), stroke: stroke-style))
-        ]
-      } else if style == "v" {
-        tiling(size: (s, s))[
-          #place(native-line(start: (s / 2, 0pt), end: (s / 2, s), stroke: stroke-style))
-        ]
-      } else if style == "cross" {
-        tiling(size: (s, s))[
-          #place(native-line(start: (0pt, s), end: (s, 0pt), stroke: stroke-style))
-          #place(native-line(start: (0pt, 0pt), end: (s, s), stroke: stroke-style))
-        ]
-      } else if style == "grid" {
-        tiling(size: (s, s))[
-          #place(native-line(start: (0pt, s / 2), end: (s, s / 2), stroke: stroke-style))
-          #place(native-line(start: (s / 2, 0pt), end: (s / 2, s), stroke: stroke-style))
-        ]
+      let seg(from, to) = place(native-line(start: from, end: to, stroke: stroke-style))
+      // Every line is extended half a tile past the boundary, and diagonals
+      // are repeated at the opposite corners: a thick stroke's band around a
+      // corner-to-corner line spills into the neighboring tiles, and the tile
+      // clip would otherwise punch holes into it at the corners.
+      let ne-lines = (
+        seg((-0.5 * s, 1.5 * s), (1.5 * s, -0.5 * s)),
+        seg((-0.5 * s, 0.5 * s), (0.5 * s, -0.5 * s)),
+        seg((0.5 * s, 1.5 * s), (1.5 * s, 0.5 * s)),
+      )
+      let nw-lines = (
+        seg((-0.5 * s, -0.5 * s), (1.5 * s, 1.5 * s)),
+        seg((-0.5 * s, 0.5 * s), (0.5 * s, 1.5 * s)),
+        seg((0.5 * s, -0.5 * s), (1.5 * s, 0.5 * s)),
+      )
+      let h-line = seg((-0.5 * s, s / 2), (1.5 * s, s / 2))
+      let v-line = seg((s / 2, -0.5 * s), (s / 2, 1.5 * s))
+      let lines = if style == "ne" { ne-lines }
+        else if style == "nw" { nw-lines }
+        else if style == "h" { (h-line,) }
+        else if style == "v" { (v-line,) }
+        else if style == "cross" { ne-lines + nw-lines }
+        else if style == "grid" { (h-line, v-line) }
+        else { return none }
+      tiling(size: (s, s), lines.join())
+    }
+
+    // Fill paint of an area-type spec: hatch pattern if requested, else the
+    // solid color. `hatch` is a style string or a dict
+    // (style: "ne", spacing: 5pt, stroke: ...); the flat `hatch-spacing` /
+    // `hatch-stroke` keys are the fallback for unset dict entries.
+    let series-paint(func-spec, fill-color) = {
+      let h = func-spec.at("hatch", default: none)
+      if h == none { return fill-color }
+      let (style, spacing, stroke-v) = if type(h) == dictionary {
+        assert("style" in h,
+          message: "hatch: dictionary form requires a 'style' key, e.g. (style: \"ne\", spacing: 5pt)")
+        (h.at("style"),
+         h.at("spacing", default: func-spec.at("hatch-spacing", default: 5pt)),
+         h.at("stroke", default: func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)))
+      } else {
+        (h,
+         func-spec.at("hatch-spacing", default: 5pt),
+         func-spec.at("hatch-stroke", default: luma(80) + 0.5pt))
       }
+      make-hatch-pattern(style, spacing, stroke-v)
     }
 
     set-style(
@@ -639,6 +748,7 @@
 
     // Helper: check if a tick value should have a label displayed
     let x-has-label(x) = {
+      if not draw-x-axis { return false }
       if xtick-labels == none { return false }
       if calc.abs(x) < 0.0001 { return false }  // 0 handled separately
       let label-interval = x-ticks.step * xtick-label-step
@@ -648,6 +758,7 @@
     }
 
     let y-has-label(y) = {
+      if not draw-y-axis { return false }
       if ytick-labels == none { return false }
       if calc.abs(y) < 0.0001 { return false }  // 0 handled separately
       let label-interval = y-ticks.step * ytick-label-step
@@ -1085,24 +1196,31 @@
     // Axes, ticks, and axis labels are drawn after plot series so curves cannot cover labels.
     let draw-axes-ticks-labels() = {
       // Axes (with optional extension beyond plot area)
-      let (x1, y-ax) = to-canvas(xmin, x-axis-y)
-      let (x2, _) = to-canvas(xmax, x-axis-y)
-      let x1-ext = x1 - x-extend.at(0) * x-scale
-      let x2-ext = x2 + x-extend.at(1) * x-scale
-      line((x1-ext, y-ax), (x2-ext, y-ax), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
+      if draw-x-axis {
+        let (x1, y-ax) = to-canvas(xmin, x-axis-y)
+        let (x2, _) = to-canvas(xmax, x-axis-y)
+        let x1-ext = x1 - x-extend.at(0) * x-scale
+        let x2-ext = x2 + x-extend.at(1) * x-scale
+        line((x1-ext, y-ax), (x2-ext, y-ax), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
+      }
 
-      let (x-ax, y1) = to-canvas(y-axis-x, ymin)
-      let (_, y2) = to-canvas(y-axis-x, ymax)
-      let y1-ext = y1 - y-extend.at(0) * y-scale
-      let y2-ext = y2 + y-extend.at(1) * y-scale
-      line((x-ax, y1-ext), (x-ax, y2-ext), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
+      if draw-y-axis {
+        let (x-ax, y1) = to-canvas(y-axis-x, ymin)
+        let (_, y2) = to-canvas(y-axis-x, ymax)
+        let y1-ext = y1 - y-extend.at(0) * y-scale
+        let y2-ext = y2 + y-extend.at(1) * y-scale
+        line((x-ax, y1-ext), (x-ax, y2-ext), stroke: s.axis.stroke, mark: (end: s.axis.arrow))
+      }
 
       // Tick label rendering: optional background so curves crossing the
-      // label band stay behind clean digits.
-      let tick-text(label) = {
+      // label band stay behind clean digits. The background is only painted
+      // when a curve actually crosses the label box — otherwise it would
+      // punch a white hole into area fills drawn underneath.
+      let label-crossed(b) = fn-obstacle-segs.any(((p1, p2)) => seg-hits-box(p1, p2, b))
+      let tick-text(label, crossed: false) = {
         let t = apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#label])
         let bg = s.ticks.at("label-bg", default: white)
-        if bg != none { box(fill: bg, inset: (x: 1pt, y: 0.5pt), t) } else { t }
+        if bg != none and crossed { box(fill: bg, inset: (x: 1pt, y: 0.5pt), t) } else { t }
       }
       let axis-label-text(label) = {
         let t = apply-font(text(size: s.labels.size, fill: s.labels.fill)[#label])
@@ -1128,7 +1246,7 @@
       }
 
       // Ticks and labels (tick-len already defined above)
-      for (i, x) in x-ticks.ticks.enumerate() {
+      for (i, x) in if draw-x-axis { x-ticks.ticks.enumerate() } else { () } {
         // Skip tick at xmax (where arrow is), unless we keep the end tick
         if calc.abs(x - xmax) < 0.0001 and not xmax-on-tick { continue }
         let (cx, cy) = to-canvas(x, x-axis-y)
@@ -1156,12 +1274,13 @@
                              else { label != "" and label != "0" }
           if render-label {
             content((cx, cy - tick-len - label-offset),
-                    tick-text(label), anchor: "north")
+                    tick-text(label, crossed: label-crossed(x-tick-label-box(x))),
+                    anchor: "north")
           }
         }
       }
 
-      for (i, y) in y-ticks.ticks.enumerate() {
+      for (i, y) in if draw-y-axis { y-ticks.ticks.enumerate() } else { () } {
         // Skip tick at ymax (where arrow is), unless we keep the end tick
         if calc.abs(y - ymax) < 0.0001 and not ymax-on-tick { continue }
         let (cx, cy) = to-canvas(y-axis-x, y)
@@ -1199,7 +1318,8 @@
             })
             if not collides {
               content((cx - tick-len - label-offset, cy),
-                      tick-text(label), anchor: "east")
+                      tick-text(label, crossed: label-crossed(y-tick-label-box(y))),
+                      anchor: "east")
             }
           }
         }
@@ -1222,7 +1342,8 @@
             )
           }
         }
-        content(label-pos, tick-text([0]), anchor: s.origin.label-anchor)
+        content(label-pos, tick-text([0], crossed: label-crossed(origin-label-box())),
+                anchor: s.origin.label-anchor)
       }
 
       // Axis labels.
@@ -1390,9 +1511,6 @@
         let domain       = func-spec.at("domain", default: (xmin, xmax))
         let samples      = func-spec.at("samples", default: 80)
         let fill-color   = func-spec.at("color", default: luma(220))
-        let hatch-style  = func-spec.at("hatch", default: none)
-        let hatch-sp     = func-spec.at("hatch-spacing", default: 5pt)
-        let hatch-stroke = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
 
         // Clip to the plot rectangle: restrict the domain, clamp the y values.
         let (d1, d2) = domain
@@ -1417,10 +1535,7 @@
 
         let all-pts = top-pts + bot-pts.rev()
         if all-pts.len() > 2 {
-          let paint = if hatch-style != none {
-            make-hatch-pattern(hatch-style, hatch-sp, hatch-stroke)
-          } else { fill-color }
-          line(..all-pts, close: true, fill: paint, stroke: none)
+          line(..all-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
         }
 
       // ── Fill between two functions ───────────────────────────────────────
@@ -1437,9 +1552,6 @@
         let samples      = func-spec.at("samples", default: 80)
         let fill-color   = func-spec.at("color",
                              default: func-spec.at("fill", default: luma(220)))
-        let hatch-style  = func-spec.at("hatch", default: none)
-        let hatch-sp     = func-spec.at("hatch-spacing", default: 5pt)
-        let hatch-stroke = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
 
         // Clip to the plot rectangle: restrict the domain, clamp the y values.
         let (d1, d2) = domain
@@ -1466,10 +1578,7 @@
 
         let all-pts = fwd-pts + bwd-pts.rev()
         if all-pts.len() > 2 {
-          let paint = if hatch-style != none {
-            make-hatch-pattern(hatch-style, hatch-sp, hatch-stroke)
-          } else { fill-color }
-          line(..all-pts, close: true, fill: paint, stroke: none)
+          line(..all-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
         }
 
       // ── Text annotation at data coordinates ─────────────────────────────
@@ -1478,7 +1587,7 @@
         let ann-text   = func-spec.at("annotation")
         let ann-pos    = func-spec.at("pos")
         let ann-anchor = func-spec.at("anchor", default: "center")
-        let ann-size   = func-spec.at("size", default: 10pt)
+        let ann-size   = func-spec.at("size", default: 9pt)  // matches note()
         let (ax, ay)   = ann-pos
         let (cx, cy)   = to-canvas(ax, ay)
         content((cx, cy), apply-font(text(ann-text, size: ann-size)), anchor: ann-anchor)
@@ -1495,9 +1604,6 @@
         let r-base      = func-spec.at("baseline", default: 0.0)
         let fill-color  = func-spec.at("color", default: luma(220))
         let rect-stroke = func-spec.at("stroke", default: luma(80) + 0.6pt)
-        let hatch-style = func-spec.at("hatch", default: none)
-        let hatch-sp    = func-spec.at("hatch-spacing", default: 5pt)
-        let hatch-stk   = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
 
         let r-samples      = func-spec.at("samples", default: 20)
         let r-show-points  = func-spec.at("show-points", default: false)
@@ -1518,44 +1624,22 @@
         // Collect canvas evaluation points for dots/arrows (left/right/mid only)
         let eval-pts = ()
 
-        for i in range(r-n) {
-          let xl = d1 + i * w
-          let xr = d1 + (i + 1) * w
-          let y = if r-method == "lower" or r-method == "upper" {
-            let sub-ys = ()
-            for j in range(r-samples + 1) {
-              let x = xl + j * (xr - xl) / r-samples
-              let v = r-fn(x)
-              if v != none and not float(v).is-nan() { sub-ys.push(float(v)) }
-            }
-            if sub-ys.len() == 0 { none }
-            else if r-method == "lower" { calc.min(..sub-ys) }
-            else { calc.max(..sub-ys) }
-          } else {
-            let xeval = if r-method == "left"  { xl }
-                        else if r-method == "right" { xr }
-                        else { (xl + xr) / 2.0 }
-            let ev = r-fn(xeval)
-            // Dots only inside the plot rectangle (rectangles are clipped too)
-            if (ev != none and not float(ev).is-nan()
-                and xeval >= xmin - 1e-9 and xeval <= xmax + 1e-9
-                and float(ev) >= ymin - 1e-9 and float(ev) <= ymax + 1e-9) {
-              eval-pts.push(to-canvas(xeval, float(ev)))
-            }
-            ev
+        for r in riemann-heights(r-fn, d1, d2, r-n, r-method, r-samples) {
+          // Dots only inside the plot rectangle (rectangles are clipped too)
+          if (r.xeval != none and r.y != none
+              and r.xeval >= xmin - 1e-9 and r.xeval <= xmax + 1e-9
+              and r.y >= ymin - 1e-9 and r.y <= ymax + 1e-9) {
+            eval-pts.push(to-canvas(r.xeval, r.y))
           }
-          if y != none and not float(y).is-nan() {
-            let yv = float(y)
+          if r.y != none {
             // Clip the rectangle to the plot area
-            let xl-c = clamp-x(xl)
-            let xr-c = clamp-x(xr)
+            let xl-c = clamp-x(r.xl)
+            let xr-c = clamp-x(r.xr)
             if xr-c - xl-c > 1e-9 {
               let (cxl, cybot) = to-canvas(xl-c, clamp-y(r-base))
-              let (cxr, cytop) = to-canvas(xr-c, clamp-y(yv))
-              let paint = if hatch-style != none {
-                make-hatch-pattern(hatch-style, hatch-sp, hatch-stk)
-              } else { fill-color }
-              rect((cxl, cybot), (cxr, cytop), fill: paint, stroke: rect-stroke)
+              let (cxr, cytop) = to-canvas(xr-c, clamp-y(r.y))
+              rect((cxl, cybot), (cxr, cytop),
+                fill: series-paint(func-spec, fill-color), stroke: rect-stroke)
             }
           }
         }
@@ -1707,9 +1791,6 @@
         let par-domain = func-spec.at("domain", default: (0.0, 1.0))
         let par-samples = func-spec.at("samples", default: 80)
         let fill-color   = func-spec.at("color", default: luma(220))
-        let hatch-style  = func-spec.at("hatch", default: none)
-        let hatch-sp     = func-spec.at("hatch-spacing", default: 5pt)
-        let hatch-stroke = func-spec.at("hatch-stroke", default: luma(80) + 0.5pt)
         let (t1, t2) = par-domain
         let step = (t2 - t1) / par-samples
         let par-pts = ()
@@ -1723,17 +1804,14 @@
           }
         }
         if par-pts.len() > 2 {
-          let paint = if hatch-style != none {
-            make-hatch-pattern(hatch-style, hatch-sp, hatch-stroke)
-          } else { fill-color }
-          line(..par-pts, close: true, fill: paint, stroke: none)
+          line(..par-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
         }
       }
 
       if mark-type != "none" and points-to-draw.len() > 0 {
         for (cx, cy, i) in points-to-draw {
           if calc.rem(i, mark-interval) == 0 {
-            draw-marker(none, (cx, cy), mark-type, mark-size, mark-fill, mark-stroke)
+            draw-marker((cx, cy), mark-type, mark-size, mark-fill, mark-stroke)
           }
         }
       }
@@ -1751,10 +1829,13 @@
       let (ax2, _) = to-canvas(xmax, x-axis-y)
       let (vx, vy1) = to-canvas(y-axis-x, ymin)
       let (_, vy2) = to-canvas(y-axis-x, ymax)
-      let axis-segs = (
-        ((ax1 - x-extend.at(0) * x-scale, ay), (ax2 + x-extend.at(1) * x-scale, ay)),
-        ((vx, vy1 - y-extend.at(0) * y-scale), (vx, vy2 + y-extend.at(1) * y-scale)),
-      )
+      let axis-segs = ()
+      if draw-x-axis {
+        axis-segs.push(((ax1 - x-extend.at(0) * x-scale, ay), (ax2 + x-extend.at(1) * x-scale, ay)))
+      }
+      if draw-y-axis {
+        axis-segs.push(((vx, vy1 - y-extend.at(0) * y-scale), (vx, vy2 + y-extend.at(1) * y-scale)))
+      }
 
       // Tick-label boxes actually drawn (hidden ones excluded).
       let tick-boxes = ()
@@ -2142,8 +2223,48 @@
       let z-y-sc = zoom-h / (zy2 - zy1)
       let to-zoom(x, y) = (bx1 + (x - zx1) * z-x-sc, by1 + (y - zy1) * z-y-sc)
 
+      // Clip a segment against the inset shape (rect box or circle lens)
+      let clip-seg-z(p1, p2) = if lens-shape == "circle" {
+        clip-segment-ellipse(p1, p2, ic-cx, ic-cy, ic-rx, ic-ry)
+      } else {
+        clip-segment(p1, p2, bx1, by1, bx2, by2)
+      }
+      // Vertical extent of the inset at canvas x — column-wise clipping for
+      // area fills (exact for x-monotone bands, including the circle lens).
+      let z-band(px) = if lens-shape == "circle" {
+        let t = (px - ic-cx) / ic-rx
+        if calc.abs(t) >= 0.9995 { none }
+        else {
+          let h = ic-ry * calc.sqrt(1 - t * t)
+          (ic-cy - h, ic-cy + h)
+        }
+      } else {
+        if px < bx1 - 0.0001 or px > bx2 + 0.0001 { none } else { (by1, by2) }
+      }
+      // Fill the band between two sampled edges given as columns
+      // (px, py-top, py-bot); none entries mark breaks and are skipped.
+      let fill-band(cols, paint) = {
+        let top-pts = ()
+        let bot-pts = ()
+        for c in cols {
+          if c == none { continue }
+          let (px, pt, pb) = c
+          let b = z-band(px)
+          if b == none { continue }
+          let (blo, bhi) = b
+          top-pts.push((px, calc.max(blo, calc.min(bhi, pt))))
+          bot-pts.push((px, calc.max(blo, calc.min(bhi, pb))))
+        }
+        if top-pts.len() > 1 {
+          line(..(top-pts + bot-pts.rev()), close: true, fill: paint, stroke: none)
+        }
+      }
+
+      // Two passes like the main renderer: area fills first, curves on top.
+      for z-pass in ("area", "line") {
       for fs in all-funcs {
         let fs = if type(fs) == function { (fn: fs) } else { fs }
+        if (z-pass == "area") != is-area-spec(fs) { continue }
         let fs-stk = fs.at("stroke", default: s.plot.stroke)
 
         if "fn" in fs {
@@ -2168,11 +2289,7 @@
               let p1 = z-pts.at(j)
               let p2 = z-pts.at(j + 1)
               if p1 != none and p2 != none {
-                let cl = if lens-shape == "circle" {
-                  clip-segment-ellipse(p1, p2, ic-cx, ic-cy, ic-rx, ic-ry)
-                } else {
-                  clip-segment(p1, p2, bx1, by1, bx2, by2)
-                }
+                let cl = clip-seg-z(p1, p2)
                 if cl != none {
                   let (cp1, cp2) = cl
                   line(cp1, cp2, stroke: fs-stk)
@@ -2199,31 +2316,174 @@
           let mk-z = fs.at("mark", default: "none")
           if mk-z != "none" {
             for pt-z in canvas-z {
-              draw-marker(none, pt-z, mk-z,
+              draw-marker(pt-z, mk-z,
                 fs.at("mark-size",   default: s.marker.size),
                 fs.at("mark-fill",   default: s.marker.fill),
                 fs.at("mark-stroke", default: s.marker.stroke))
             }
           }
+
+        // ── Fill below a curve (fill-area) ───────────────────────────────
+        } else if "fill" in fs {
+          let fill-fn  = fs.at("fill")
+          let baseline = float(fs.at("baseline", default: 0.0))
+          let (fd1, fd2) = fs.at("domain", default: (xmin, xmax))
+          let fd1 = calc.max(float(fd1), zx1)
+          let fd2 = calc.min(float(fd2), zx2)
+          let n-samp = fs.at("samples", default: 80)
+          if fd2 - fd1 > 1e-9 {
+            let stp = (fd2 - fd1) / n-samp
+            let cols = range(n-samp + 1).map(i => {
+              let x = fd1 + i * stp
+              let y = fill-fn(x)
+              if y == none or float(y).is-nan() { none }
+              else {
+                let (px, pt) = to-zoom(x, float(y))
+                let (_, pb) = to-zoom(x, baseline)
+                (px, pt, pb)
+              }
+            })
+            fill-band(cols, series-paint(fs, fs.at("color", default: luma(220))))
+          }
+
+        // ── Fill between two curves (area-between) ───────────────────────
+        } else if "fill-between" in fs or "fill-fn1" in fs {
+          let (fn1, fn2) = if "fill-between" in fs { fs.at("fill-between") }
+            else { (fs.at("fill-fn1"), fs.at("fill-fn2", default: x => 0.0)) }
+          let (fd1, fd2) = fs.at("domain", default: (xmin, xmax))
+          let fd1 = calc.max(float(fd1), zx1)
+          let fd2 = calc.min(float(fd2), zx2)
+          let n-samp = fs.at("samples", default: 80)
+          if fd2 - fd1 > 1e-9 {
+            let stp = (fd2 - fd1) / n-samp
+            let cols = range(n-samp + 1).map(i => {
+              let x = fd1 + i * stp
+              let y1 = fn1(x)
+              let y2 = fn2(x)
+              if (y1 == none or float(y1).is-nan()
+                  or y2 == none or float(y2).is-nan()) { none }
+              else {
+                let (px, pt) = to-zoom(x, calc.max(float(y1), float(y2)))
+                let (_, pb) = to-zoom(x, calc.min(float(y1), float(y2)))
+                (px, pt, pb)
+              }
+            })
+            fill-band(cols, series-paint(fs,
+              fs.at("color", default: fs.at("fill", default: luma(220)))))
+          }
+
+        // ── Riemann rectangles ───────────────────────────────────────────
+        } else if "riemann" in fs {
+          let r-fn = fs.at("riemann")
+          let (rd1, rd2) = fs.at("domain", default: (xmin, xmax))
+          let r-method = fs.at("method", default: "right")
+          let r-base = float(fs.at("baseline", default: 0.0))
+          let rect-stk = fs.at("stroke", default: luma(80) + 0.6pt)
+          let paint = series-paint(fs, fs.at("color", default: luma(220)))
+          for r in riemann-heights(r-fn, rd1, rd2, fs.at("n", default: 4),
+                                   r-method, fs.at("samples", default: 20)) {
+            if r.y == none { continue }
+            let xl-c = calc.max(float(r.xl), zx1)
+            let xr-c = calc.min(float(r.xr), zx2)
+            if xr-c - xl-c <= 1e-9 { continue }
+            let (pxl, pyb) = to-zoom(xl-c, r-base)
+            let (pxr, pyt) = to-zoom(xr-c, r.y)
+            // Fill: column-clipped band across the rectangle
+            let m = 16
+            fill-band(range(m + 1).map(j =>
+              (pxl + j * (pxr - pxl) / m, pyt, pyb)), paint)
+            // Border: the four edges, segment-clipped to the inset shape
+            for (p1, p2) in (
+              ((pxl, pyb), (pxl, pyt)), ((pxl, pyt), (pxr, pyt)),
+              ((pxr, pyt), (pxr, pyb)), ((pxr, pyb), (pxl, pyb)),
+            ) {
+              let cl = clip-seg-z(p1, p2)
+              if cl != none { line(cl.at(0), cl.at(1), stroke: rect-stk) }
+            }
+          }
+
+        // ── Closed parametric fill (fill-closed) ─────────────────────────
+        } else if "fill-closed" in fs {
+          let (par-x, par-y) = fs.at("fill-closed")
+          let (t1, t2) = fs.at("domain", default: (0.0, 1.0))
+          let n-samp = fs.at("samples", default: 80)
+          let stp = (t2 - t1) / n-samp
+          let pts = ()
+          for i in range(n-samp + 1) {
+            let t = t1 + i * stp
+            let px-d = par-x(t)
+            let py-d = par-y(t)
+            if (px-d == none or py-d == none
+                or float(px-d).is-nan() or float(py-d).is-nan()) { continue }
+            let (px, py) = to-zoom(float(px-d), float(py-d))
+            // Cheap clip: clamp into the inset (radially for the circle
+            // lens), mirroring the clamp-x/clamp-y clip of the main renderer.
+            pts.push(if lens-shape == "circle" {
+              let dx = (px - ic-cx) / ic-rx
+              let dy = (py - ic-cy) / ic-ry
+              let d = calc.sqrt(dx * dx + dy * dy)
+              if d <= 1.0 { (px, py) }
+              else { (ic-cx + dx / d * ic-rx, ic-cy + dy / d * ic-ry) }
+            } else {
+              (calc.max(bx1, calc.min(bx2, px)), calc.max(by1, calc.min(by2, py)))
+            })
+          }
+          if pts.len() > 2 {
+            line(..pts, close: true,
+              fill: series-paint(fs, fs.at("color", default: luma(220))), stroke: none)
+          }
+
+        // ── Reference lines ──────────────────────────────────────────────
+        } else if "vline" in fs {
+          let x0 = fs.at("vline")
+          let cl = clip-seg-z(
+            to-zoom(x0, fs.at("ymin", default: ymin)),
+            to-zoom(x0, fs.at("ymax", default: ymax)))
+          if cl != none { line(cl.at(0), cl.at(1), stroke: fs-stk) }
+
+        } else if "hline" in fs {
+          let y0 = fs.at("hline")
+          let cl = clip-seg-z(
+            to-zoom(fs.at("xmin", default: xmin), y0),
+            to-zoom(fs.at("xmax", default: xmax), y0))
+          if cl != none { line(cl.at(0), cl.at(1), stroke: fs-stk) }
+
+        // ── Parametric curve ─────────────────────────────────────────────
+        } else if "parametric" in fs {
+          let (par-x, par-y) = fs.at("parametric")
+          let (t1, t2) = fs.at("domain", default: (0.0, 1.0))
+          let n-samp = fs.at("samples", default: 100)
+          let stp = (t2 - t1) / n-samp
+          let prev = none
+          for i in range(n-samp + 1) {
+            let t = t1 + i * stp
+            let px-d = par-x(t)
+            let py-d = par-y(t)
+            let p = if (px-d == none or py-d == none
+                or float(px-d).is-nan() or float(py-d).is-nan()) { none }
+              else { to-zoom(float(px-d), float(py-d)) }
+            if prev != none and p != none {
+              let cl = clip-seg-z(prev, p)
+              if cl != none { line(cl.at(0), cl.at(1), stroke: fs-stk) }
+            }
+            prev = p
+          }
         }
       }
+      }  // end area/line inset passes
 
       // Draw axis lines inside the inset if they pass through the zoom region
       let draw-inset-line(p1, p2) = {
-        let cl = if lens-shape == "circle" {
-          clip-segment-ellipse(p1, p2, ic-cx, ic-cy, ic-rx, ic-ry)
-        } else {
-          clip-segment(p1, p2, bx1, by1, bx2, by2)
-        }
+        let cl = clip-seg-z(p1, p2)
         if cl != none { let (cp1, cp2) = cl; line(cp1, cp2, stroke: s.axis.stroke) }
       }
       // X-axis
-      if x-axis-y >= zy1 - 0.0001 and x-axis-y <= zy2 + 0.0001 {
+      if draw-x-axis and x-axis-y >= zy1 - 0.0001 and x-axis-y <= zy2 + 0.0001 {
         let (_, y-ax-z) = to-zoom(zx1, x-axis-y)
         draw-inset-line((bx1, y-ax-z), (bx2, y-ax-z))
       }
       // Y-axis
-      if y-axis-x >= zx1 - 0.0001 and y-axis-x <= zx2 + 0.0001 {
+      if draw-y-axis and y-axis-x >= zx1 - 0.0001 and y-axis-x <= zx2 + 0.0001 {
         let (x-ax-z, _) = to-zoom(y-axis-x, zy1)
         draw-inset-line((x-ax-z, by1), (x-ax-z, by2))
       }
@@ -2284,9 +2544,9 @@
   ymin: auto,
   ymax: auto,
   stroke: blue + 1.2pt,
+  samples: 100,
   ..args
 ) = {
-  let samples = args.named().at("samples", default: 100)
   let (y-min, y-max) = if ymin == auto or ymax == auto {
     let ys = ()
     let step = (domain.at(1) - domain.at(0)) / samples
@@ -2306,7 +2566,7 @@
     ymin: if ymin == auto { y-min } else { ymin },
     ymax: if ymax == auto { y-max } else { ymax },
     ..args,
-    (fn: fn, stroke: stroke, domain: domain),
+    (fn: fn, stroke: stroke, domain: domain, samples: samples),
   )
 }
 
@@ -2486,7 +2746,7 @@
       ytick: (),
       show-grid: false,
       show-origin: false,
-      show-y-axis: false,
+      axis-y-pos: none,
       ..items,
     )
   ]
@@ -2516,31 +2776,9 @@
 
 /// Create a data-point series specification.
 ///
-/// This is an alias for `scatter` with the same options. Use `connect: true`
-/// to join the points with line segments.
-#let data(
-  points,
-  mark: "*",
-  mark-size: 0.12,
-  mark-fill: blue,
-  mark-stroke: blue + 0.8pt,
-  connect: false,
-  stroke: none,
-  label: none,
-  label-pos: 0.8,
-  label-anchor: "south-west",
-) = scatter(
-  points,
-  mark: mark,
-  mark-size: mark-size,
-  mark-fill: mark-fill,
-  mark-stroke: mark-stroke,
-  connect: connect,
-  stroke: stroke,
-  label: label,
-  label-pos: label-pos,
-  label-anchor: label-anchor,
-)
+/// Alias for `scatter` with the same options. Use `connect: true` to join
+/// the points with line segments.
+#let data = scatter
 
 /// Create a line plot with markers specification.
 #let line-plot(
@@ -2562,7 +2800,8 @@
 
 /// Create a function plot specification with markers.
 #let func-plot(
-  fn,
+  ..args,
+  fn: none,
   domain: auto,
   stroke: blue + 1.2pt,
   samples: 100,
@@ -2575,6 +2814,7 @@
   label-pos: 0.8,
   label-anchor: "south-west",
 ) = {
+  let fn = _resolve-fn("func-plot", args, fn)
   let spec = (
     fn: fn, stroke: stroke, samples: samples,
     mark: mark, mark-size: mark-size, mark-fill: mark-fill,
@@ -2588,16 +2828,22 @@
 /// Build a fill-below-curve series spec.
 ///
 /// Fills the region between `fn` and `baseline` (default 0) over `domain`.
+/// The function can be given positionally or as `fn:` (like plot series dicts).
+///
+/// `hatch` accepts a style string (`"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`,
+/// `"grid"`) or a dict `(style: "ne", spacing: 5pt, stroke: red + 1pt)`;
+/// the flat `hatch-spacing` / `hatch-stroke` arguments fill in unset entries.
 ///
 /// Example:
 /// ```typst
 /// #plot(...,
-///   fill-area(x => calc.sin(x), domain: (0, calc.pi), color: blue.lighten(70%)),
+///   fill-area(fn: x => calc.sin(x), domain: (0, calc.pi), color: blue.lighten(70%)),
 ///   (fn: x => calc.sin(x), stroke: blue + 1.2pt),
 /// )
 /// ```
 #let fill-area(
-  fn,
+  ..args,
+  fn: none,
   domain: auto,
   baseline: 0.0,
   color: luma(220),
@@ -2606,6 +2852,7 @@
   hatch-stroke: luma(80) + 0.5pt,
   samples: 80,
 ) = {
+  let fn = _resolve-fn("fill-area", args, fn)
   let spec = (
     fill: fn, baseline: baseline, color: color,
     hatch: hatch, hatch-spacing: hatch-spacing, hatch-stroke: hatch-stroke,
@@ -2619,8 +2866,10 @@
 ///
 /// Fills the region between `fn1` and `fn2` over `domain`.
 /// The filled shape always encloses both curves (uses max/min at each sample).
+/// The functions can be given positionally or as `fn1:` / `fn2:`.
 ///
-/// Hatch styles: `"ne"` (/), `"nw"` (\), `"h"`, `"v"`, `"cross"`, `"grid"`.
+/// Hatch styles: `"ne"` (/), `"nw"` (\), `"h"`, `"v"`, `"cross"`, `"grid"` —
+/// or a dict `(style: "ne", spacing: 5pt, stroke: red + 1pt)`.
 ///
 /// Example:
 /// ```typst
@@ -2630,8 +2879,9 @@
 /// )
 /// ```
 #let area-between(
-  fn1,
-  fn2,
+  ..args,
+  fn1: none,
+  fn2: none,
   domain: auto,
   color: luma(220),
   hatch: none,
@@ -2639,6 +2889,12 @@
   hatch-stroke: luma(80) + 0.5pt,
   samples: 80,
 ) = {
+  assert(args.named().len() == 0,
+    message: "area-between: unknown named arguments: " + args.named().keys().join(", "))
+  let pos = args.pos()
+  assert((fn1 == none) == (fn2 == none) and pos.len() == if fn1 == none { 2 } else { 0 },
+    message: "area-between: expected two functions, positionally or as fn1:/fn2:")
+  let (fn1, fn2) = if fn1 != none { (fn1, fn2) } else { (pos.at(0), pos.at(1)) }
   let spec = (
     fill-between: (fn1, fn2), color: color,
     hatch: hatch, hatch-spacing: hatch-spacing, hatch-stroke: hatch-stroke,
@@ -2696,10 +2952,10 @@
 ///
 /// - region: `(x1, y1, x2, y2)` in data coords — explicit spy glass corners
 /// - center: `(cx, cy)` in data coords — spy glass center (use with `size`)
-/// - size: spy glass size in cm (canvas units) — ensures a square spy glass
+/// - size: spy glass size (length, or number in cm) — ensures a square spy glass
 /// - at: `(x, y)` data coords of inset center (`auto` = smart placement in opposite quadrant)
-/// - width: inset box width in cm (`auto` = from magnification or 3.5)
-/// - height: inset box height in cm (`auto` = from magnification or 3.5)
+/// - width: inset box width (length, or number in cm; `auto` = from magnification or 3.5)
+/// - height: inset box height (length, or number in cm; `auto` = from magnification or 3.5)
 /// - magnification: zoom factor — inset size = spy glass canvas size × factor
 /// - lens-shape: `"rect"` (default) or `"circle"`
 /// - connect: draw connector lines between spy glass and inset (default true)
@@ -2765,14 +3021,14 @@
     label: label,
   )
   if center != auto           { spec.insert("zoom-center", center) }
-  if size != auto             { spec.insert("zoom-size-cm", size) }
-  if width != auto            { spec.insert("zoom-width", width) }
-  if height != auto           { spec.insert("zoom-height", height) }
+  if size != auto             { spec.insert("zoom-size-cm", to-cm(size)) }
+  if width != auto            { spec.insert("zoom-width", to-cm(width)) }
+  if height != auto           { spec.insert("zoom-height", to-cm(height)) }
   if magnification != auto    { spec.insert("magnification", magnification) }
   if region-fill != auto      { spec.insert("region-fill", region-fill) }
   if region-stroke != auto    { spec.insert("region-stroke", region-stroke) }
   if box-stroke != auto       { spec.insert("box-stroke", box-stroke) }
-  if box-fill != none         { spec.insert("box-fill", box-fill) }
+  spec.insert("box-fill", box-fill)
   if connector-stroke != auto { spec.insert("connector-stroke", connector-stroke) }
   if shadow != auto           { spec.insert("shadow", shadow) }
   spec
@@ -2793,9 +3049,11 @@
 /// - show-xi: draw x₀, x₁, … labels at subdivision points below the axis
 /// - xi-labels: array of content overrides; `auto` = generate x_i subscripts
 /// - xi-show-values: if true, stack the numeric x value above each xi label
-/// - Hatch styles: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"`
+/// - Hatch styles: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"` —
+///   or a dict `(style: "ne", spacing: 5pt, stroke: red + 1pt)`
 #let riemann-sum(
-  fn,
+  ..args,
+  fn: none,
   domain: auto,
   n: 4,
   method: "right",
@@ -2818,6 +3076,7 @@
   xi-labels: auto,
   xi-show-values: false,
 ) = {
+  let fn = _resolve-fn("riemann-sum", args, fn)
   let spec = (
     riemann: fn, n: n, method: method, baseline: baseline,
     color: color, stroke: stroke,
@@ -2891,6 +3150,8 @@
 /// - samples: number of points to sample the profile
 /// - show-axis: draw x-axis through center
 /// - show-y-axis: draw a coordinate y-axis
+/// - show-radius-marker: draw a vertical radius arrow from the axis to the profile
+/// - radius-marker-x: x-position of the radius marker (auto = at x = a)
 /// - show-labels: show a, b, f labels
 /// - profile-stroke: stroke for the top profile curve
 /// - disk-color: fill color for the solid body
@@ -2914,9 +3175,8 @@
   y-axis-extend: (0.35, 0.45),
   axis-y: 0.0,
   axis-slope: 0.0,   // slope m: revolution axis is y = m*x + axis-y
-  show-yaxis: false,
   show-radius-marker: false,
-  yaxis-x: auto,
+  radius-marker-x: auto,
   show-labels: true,
   show-back: true,
   profile-stroke: blue + 1.5pt,
@@ -2927,7 +3187,22 @@
   label-b: $b$,
   label-f: $f$,
   label-y: $y$,
+  ..legacy,
 ) = {
+  // Deprecated spellings kept for compatibility:
+  // show-yaxis → show-y-axis, yaxis-x → radius-marker-x.
+  assert(legacy.pos().len() == 0,
+    message: "volume-of-revolution: unexpected extra positional arguments")
+  for k in legacy.named().keys() {
+    assert(k in ("show-yaxis", "yaxis-x"),
+      message: "volume-of-revolution: unknown named arguments: " + k)
+  }
+  let show-y-axis = show-y-axis or legacy.named().at("show-yaxis", default: false)
+  let radius-marker-x = if radius-marker-x != auto { radius-marker-x }
+    else { legacy.named().at("yaxis-x", default: auto) }
+
+  let width = to-cm(width)
+  let height = to-cm(height)
   let (a, b) = domain
   let m   = float(axis-slope)
   let b0  = float(axis-y)      // y-intercept of axis: y = m*x + b0
@@ -2982,7 +3257,7 @@
     let axis-cy = 0.0
     let disk-steps = 36
     let dashed-stroke = (paint: luma(160), thickness: 0.45pt, dash: "dashed")
-    let draw-coordinate-y-axis = show-y-axis or show-yaxis
+    let draw-coordinate-y-axis = show-y-axis
     let draw-radius-marker = show-radius-marker
 
     let ellipse-half(ex, radius, side) = {
@@ -3141,7 +3416,7 @@
 
     // Radius marker (optional)
     if draw-radius-marker {
-      let xv = if yaxis-x == auto { a } else { yaxis-x }
+      let xv = if radius-marker-x == auto { a } else { radius-marker-x }
       let yv-raw = fn(xv)
       let yv = safe-cr(yv-raw, xv)
       if yv > 0.05 {

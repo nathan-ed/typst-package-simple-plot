@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:0.9.1": plot, plot-fn, plot-rational, limit-schema, schema-lim, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, zoom, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:1.0.0": plot, plot-fn, plot-rational, limit-schema, schema-lim, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, zoom, set-plot-defaults, reset-plot-defaults
 
 // =============================================================================
 // DOCUMENT SETUP
@@ -136,7 +136,7 @@
 Import the package in your Typst document:
 
 ```typst
-#import "@preview/simple-plot:0.9.1": plot
+#import "@preview/simple-plot:1.0.0": plot
 ```
 
 == Quick Start
@@ -802,6 +802,7 @@ Plot a single function with automatic y-scaling:
   [`domain`], [array], [(-5, 5)], [X domain],
   [`ymin` / `ymax`], [float/auto], [auto], [Y bounds; `auto` = computed from samples],
   [`stroke`], [stroke], [`blue + 1.2pt`], [Line style],
+  [`samples`], [int], [100], [Sample count (auto y-range and curve)],
   [`..args`], [any], [—], [Forwarded to `plot()`],
 )
 
@@ -994,7 +995,7 @@ Build a function series spec with full marker and label control:
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Parameter*], [*Type*], [*Default*], [*Description*],
-  [`fn`], [function], [—], [Function to plot],
+  [`fn`], [function], [—], [Function to plot (positional or `fn:`)],
   [`domain`], [array/auto], [auto], [X domain; `auto` = full plot range],
   [`stroke`], [stroke], [`blue + 1.2pt`], [Line style],
   [`samples`], [int], [100], [Sample count],
@@ -1055,11 +1056,14 @@ Fill the region between a function and a baseline (default: $y = 0$):
 )
 ```
 
-Use `baseline` for a non-zero base level, or `hatch` for hatched fills:
+Use `baseline` for a non-zero base level, or `hatch` for hatched fills — either the flat form or a single dict:
 
 ```typst
 fill-area(x => calc.sin(x), domain: (0, calc.pi),
           hatch: "ne", hatch-spacing: 5pt, hatch-stroke: blue + 0.5pt)
+// equivalent:
+fill-area(x => calc.sin(x), domain: (0, calc.pi),
+          hatch: (style: "ne", spacing: 5pt, stroke: blue + 0.5pt))
 ```
 
 *Parameters:*
@@ -1069,11 +1073,11 @@ fill-area(x => calc.sin(x), domain: (0, calc.pi),
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Parameter*], [*Type*], [*Default*], [*Description*],
-  [`fn`], [function], [—], [Function $f(x)$ bounding the top of the region],
+  [`fn`], [function], [—], [Function $f(x)$ bounding the top of the region (positional or `fn:`)],
   [`domain`], [array/auto], [auto], [X interval; `auto` = full plot range],
   [`baseline`], [float], [0.0], [Y-value of the bottom of the region],
   [`color`], [color], [`luma(220)`], [Fill color; `none` for hatch-only],
-  [`hatch`], [string/none], [none], [Hatch pattern: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"`],
+  [`hatch`], [str/dict/none], [none], [Hatch pattern: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"` — or `(style: "ne", spacing: 5pt, stroke: red + 1pt)`],
   [`hatch-spacing`], [length], [`5pt`], [Spacing between hatch lines],
   [`hatch-stroke`], [stroke], [`luma(80) + 0.5pt`], [Hatch line stroke],
   [`samples`], [int], [80], [Sample count],
@@ -1100,11 +1104,11 @@ Fill the region enclosed by two functions:
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Parameter*], [*Type*], [*Default*], [*Description*],
-  [`fn1`], [function], [—], [First bounding function],
-  [`fn2`], [function], [—], [Second bounding function],
+  [`fn1`], [function], [—], [First bounding function (positional or `fn1:`)],
+  [`fn2`], [function], [—], [Second bounding function (positional or `fn2:`)],
   [`domain`], [array/auto], [auto], [X interval; `auto` = full plot range],
   [`color`], [color], [`luma(220)`], [Fill color; `none` for hatch-only],
-  [`hatch`], [string/none], [none], [Hatch pattern],
+  [`hatch`], [str/dict/none], [none], [Hatch pattern (style string or `(style: .., spacing: .., stroke: ..)` dict)],
   [`hatch-spacing`], [length], [`5pt`], [Hatch line spacing],
   [`hatch-stroke`], [stroke], [`luma(80) + 0.5pt`], [Hatch line stroke],
   [`samples`], [int], [80], [Sample count],
@@ -1135,7 +1139,7 @@ Fill the interior of a closed parametric curve (the curve should start and end a
   [`fn-y`], [function], [—], [Y coordinate as function of $t$],
   [`domain`], [array], [(0.0, 1.0)], [Parameter range; curve should be closed],
   [`color`], [color], [`luma(220)`], [Fill color; `none` for hatch-only],
-  [`hatch`], [string/none], [none], [Hatch pattern],
+  [`hatch`], [str/dict/none], [none], [Hatch pattern (style string or `(style: .., spacing: .., stroke: ..)` dict)],
   [`hatch-spacing`], [length], [`5pt`], [Hatch line spacing],
   [`hatch-stroke`], [stroke], [`luma(80) + 0.5pt`], [Hatch line stroke],
   [`samples`], [int], [80], [Sample count],
@@ -1328,7 +1332,7 @@ Draw a 3D-style solid generated by rotating a profile $y = f(x)$ around a horizo
   domain: (0.0, 4.0),
   n-disks: 5,
   width: 8.0, height: 4.0,
-  show-yaxis: true,
+  show-y-axis: true,
   label-a: $0$, label-b: $4$,
   label-f: $f(x)=sqrt(x)$,
 )
@@ -1339,7 +1343,7 @@ Draw a 3D-style solid generated by rotating a profile $y = f(x)$ around a horizo
       domain: (0.0, 4.0),
       n-disks: 5,
       width: 8.0, height: 4.0,
-      show-yaxis: true,
+      show-y-axis: true,
       label-a: $0$, label-b: $4$,
       label-f: $f(x)=sqrt(x)$,
     )
@@ -1381,24 +1385,24 @@ Use `axis-y` to revolve around $y = c$ (shifted horizontal axis), or `axis-slope
 
 === `show-back` and `show-radius-marker`
 
-`show-back: false` hides the dashed back half and bottom profile — useful for side-by-side comparisons. `show-radius-marker: true` draws a vertical dimension marker at the y-axis:
+`show-back: false` hides the dashed back half and bottom profile — useful for side-by-side comparisons. `show-radius-marker: true` draws a vertical dimension marker on the profile (at `radius-marker-x`, default: the left cap):
 
 ```typst
 #volume-of-revolution(fn, domain: ...,
   show-back: false,
   show-radius-marker: true,
-  yaxis-x: 2.0,   // place y-axis at x=2, not the auto left position
+  radius-marker-x: 2.0,   // marker at x=2 instead of the left cap
   label-y: $sqrt(2)$,
 )
 ```
 
 === `show-y-axis` and y-axis placement
 
-The coordinate y-axis is positioned automatically to the left of the solid by default. Use `y-axis-x` / `yaxis-x` to fix it at a specific x-value, `y-axis-offset` to change the automatic gap, and `y-axis-extend` to control how far the axis extends above and below the solid:
+The coordinate y-axis is positioned automatically to the left of the solid by default. Use `y-axis-x` to fix it at a specific x-value, `y-axis-offset` to change the automatic gap, and `y-axis-extend` to control how far the axis extends above and below the solid:
 
 ```typst
 #volume-of-revolution(fn, domain: ...,
-  show-yaxis: true,
+  show-y-axis: true,
   y-axis-offset: 0.6,           // more gap from the volume
   y-axis-extend: (0.2, 0.5),   // tighter below, more above
 )
@@ -1414,7 +1418,7 @@ The coordinate y-axis is positioned automatically to the left of the solid by de
 
 == Setting Defaults
 
-Use `set-plot-defaults` to configure defaults for all subsequent plots. Any `plot` parameter can be used, including `style`:
+Use `set-plot-defaults` to configure defaults for all subsequent plots. Any `plot` parameter can be used, including `style`; unknown option names raise an error (typo protection):
 
 ```typst
 #set-plot-defaults(
@@ -1516,6 +1520,8 @@ Override default styles with the `style` parameter:
 
 == `plot` Function
 
+All parameters are named and optional; series specs are passed positionally. Unknown named arguments raise an error (typo protection).
+
 *Dimensions and Bounds:*
 
 #table(
@@ -1523,8 +1529,8 @@ Override default styles with the `style` parameter:
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Parameter*], [*Type*], [*Default*], [*Description*],
-  [`width`], [float], [6], [Plot width in cm],
-  [`height`], [float], [6], [Plot height in cm],
+  [`width`], [length/float], [6], [Plot width — a length (`2cm`, `30mm`, ...) or a number in cm],
+  [`height`], [length/float], [6], [Plot height — a length or a number in cm],
   [`scale`], [float], [1], [Scale factor for entire plot],
   [`xmin`], [float], [-5], [Minimum x value],
   [`xmax`], [float], [5], [Maximum x value],
@@ -1548,8 +1554,8 @@ Override default styles with the `style` parameter:
   [`ylabel-anchor`], [string], ["east"], [Anchor for y label],
   [`xlabel-offset`], [array], [(0.0, -0.05)], [X label offset (cm)],
   [`ylabel-offset`], [array], [(-0.05, 0.0)], [Y label offset (cm)],
-  [`axis-x-pos`], [string/float], [0], ["bottom", "center", or y-value],
-  [`axis-y-pos`], [string/float], [0], ["left", "center", or x-value],
+  [`axis-x-pos`], [string/float/none], [0], ["bottom", "center", a y-value, or `none` to hide the axis],
+  [`axis-y-pos`], [string/float/none], [0], ["left", "center", an x-value, or `none` to hide the axis],
   [`axis-x-extend`], [float/array], [(0, 0.5)], [X-axis extension (left, right)],
   [`axis-y-extend`], [float/array], [(0, 0.5)], [Y-axis extension (bottom, top)],
 )
@@ -1582,6 +1588,7 @@ Override default styles with the `style` parameter:
   [`axis-label-size`], [length], [0.8em], [Axis label font size],
   [`min-tick-spacing`], [float], [0.4], [Minimum distance between ticks (cm); auto-widens step to the next "nice" value (1, 2, 5, 10…) when the range is large],
   [`hide-crossed-tick-labels`], [bool], [true], [Hide individual tick labels that a plotted curve crosses, keeping labels legible],
+  [`show-end-ticks`], [bool], [true], [Keep the tick/label at `xmax`/`ymax` when it lands on a tick (e.g. show "5"), pushing the axis slightly past it so the arrow clears the label],
 )
 
 #pagebreak()
@@ -1607,6 +1614,7 @@ Override default styles with the `style` parameter:
   inset: 6pt,
   [*Parameter*], [*Type*], [*Default*], [*Description*],
   [`style`], [dictionary], [none], [Style overrides (see Styling section)],
+  [`font`], [str/array], [auto], [Font applied to all plot-generated text (tick labels, axis labels, origin, annotations); `auto` = document font],
   [`series`], [array], [none], [Pre-built array of series specs (alternative to positional args)],
 )
 
@@ -1644,14 +1652,14 @@ Each plot item is a dictionary with these fields:
   stroke: (x: none, y: 0.3pt + luma(85%)),
   inset: 6pt,
   [*Parameter*], [*Type*], [*Default*], [*Description*],
-  [`fn`], [function], [—], [Function $f(x)$ to approximate],
+  [`fn`], [function], [—], [Function $f(x)$ to approximate (positional or `fn:`)],
   [`domain`], [array], [plot range], [Interval `(a, b)`; overrides the plot's x-range],
   [`n`], [int], [4], [Number of rectangles],
   [`method`], [string], [`"right"`], [`"left"`, `"right"`, `"mid"`, `"lower"`, `"upper"`],
   [`baseline`], [float], [0.0], [Y-level of rectangle bases (default: x-axis)],
   [`color`], [color], [`luma(220)`], [Rectangle fill; `none` for hatch-only],
   [`stroke`], [stroke], [`luma(80) + 0.6pt`], [Rectangle border stroke],
-  [`hatch`], [string/none], [none], [Hatch pattern: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"`],
+  [`hatch`], [str/dict/none], [none], [Hatch pattern: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"` — or `(style: "ne", spacing: 5pt, stroke: red + 1pt)`],
   [`hatch-spacing`], [length], [`5pt`], [Spacing between hatch lines],
   [`hatch-stroke`], [stroke], [`luma(80) + 0.5pt`], [Stroke for hatch lines],
   [`samples`], [int], [20], [Samples per sub-interval for `"lower"` / `"upper"` methods],
@@ -1682,16 +1690,17 @@ Each plot item is a dictionary with these fields:
   [`fn`], [function], [—], [Profile function $f(x)$; the curve that is revolved],
   [`domain`], [array], [`(0.0, 4.0)`], [Interval `(a, b)` — the revolution interval],
   [`n-disks`], [int], [4], [Number of intermediate disk cross-sections to show],
-  [`width` / `height`], [float], [5.0 / 3.5], [Canvas size in cm],
+  [`width` / `height`], [length/float], [5.0 / 3.5], [Canvas size — a length or a number in cm],
   [`samples`], [int], [60], [Number of points sampled along the profile curve],
   [`axis-y`], [float], [0.0], [Y-value of horizontal revolution axis ($y = c$)],
   [`axis-slope`], [float], [0.0], [Slope $m$: revolution axis is $y = m x + "axis-y"$],
   [`show-axis`], [bool], [true], [Draw the revolution axis with an arrowhead],
-  [`show-y-axis` / `show-yaxis`], [bool], [false], [Draw a coordinate y-axis at the left cap],
-  [`y-axis-x` / `yaxis-x`], [float/auto], [`auto`], [X-position for the y-axis; `auto` = left of volume],
+  [`show-y-axis`], [bool], [false], [Draw a coordinate y-axis at the left cap (`show-yaxis` is a deprecated alias)],
+  [`y-axis-x`], [float/auto], [`auto`], [X-position for the y-axis; `auto` = left of volume],
   [`y-axis-offset`], [float], [0.45], [Gap between y-axis and the volume when `auto`],
   [`y-axis-extend`], [array], [`(0.35, 0.45)`], [Y-axis padding `(below, above)` the solid],
-  [`show-radius-marker`], [bool], [false], [Draw a vertical radius dimension marker at `yaxis-x`],
+  [`show-radius-marker`], [bool], [false], [Draw a vertical radius dimension marker at `radius-marker-x`],
+  [`radius-marker-x`], [float/auto], [`auto`], [X-position of the radius marker; `auto` = left cap (`yaxis-x` is a deprecated alias)],
   [`show-back`], [bool], [true], [Show the back half of the solid (dashed ellipses + bottom curve)],
   [`show-labels`], [bool], [true], [Show $a$, $b$, $f$ labels],
   [`profile-stroke`], [stroke], [`blue + 1.5pt`], [Top profile curve stroke],
@@ -1707,7 +1716,7 @@ Each plot item is a dictionary with these fields:
 
 == `zoom` - Spy / zoom inset
 
-Add a magnified sub-view (spy glass) of any region of the main plot. The `zoom()` helper returns a series spec that is passed directly to `plot()`. It draws a highlighted region on the main plot and a zoomed inset box with connector lines.
+Add a magnified sub-view (spy glass) of any region of the main plot. The `zoom()` helper returns a series spec that is passed directly to `plot()`. It draws a highlighted region on the main plot and a zoomed inset box with connector lines. All series types are re-rendered inside the inset — curves, points, fills, Riemann rectangles, reference lines and parametric curves — clipped to the lens shape (annotations and labels are not repeated).
 
 === Basic Example
 
@@ -1760,9 +1769,9 @@ Add a magnified sub-view (spy glass) of any region of the main plot. The `zoom()
   [*Parameter*], [*Type*], [*Default*], [*Description*],
   [`region`], [array], [`auto`], [Spy glass corners `(x1, y1, x2, y2)` in data coords. Either `region` or `center` + `size` is required.],
   [`center`], [array], [`auto`], [Spy glass center `(cx, cy)` in data coords (use with `size`)],
-  [`size`], [float], [`auto`], [Spy glass size in cm — ensures a square glass regardless of axis ratio],
+  [`size`], [length/float], [`auto`], [Spy glass size (length, or number in cm) — ensures a square glass regardless of axis ratio],
   [`at`], [array/str], [`auto`], [Inset box center: `(x,y)` data coords, or a placement keyword: `"top-right"`, `"top-left"`, `"bottom-right"`, `"bottom-left"`, `"top"`, `"bottom"`, `"left"`, `"right"`. `auto` = smart opposite-quadrant placement],
-  [`width` / `height`], [float], [`auto`], [Inset box size in cm. `auto` = derived from `magnification` or 3.5],
+  [`width` / `height`], [length/float], [`auto`], [Inset box size (length, or number in cm). `auto` = derived from `magnification` or 3.5],
   [`magnification`], [float], [`auto`], [Zoom factor — inset size = spy glass canvas size × factor],
   [`lens-shape`], [str], [`"rect"`], [`"rect"` or `"circle"`],
   [`connect`], [bool], [true], [Draw connector lines between spy glass and inset],

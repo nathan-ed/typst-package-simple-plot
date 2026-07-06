@@ -1,7 +1,7 @@
 //
 // revolution.typ — Gallery for volume-of-revolution feature in simple-plot
 //
-#import "@preview/simple-plot:0.9.1": volume-of-revolution
+#import "@preview/simple-plot:1.0.0": volume-of-revolution
 
 #set page(margin: 1.5cm, width: 21cm)
 #set text(font: "New Computer Modern", size: 10pt)
@@ -124,7 +124,7 @@
         width: 7.0, height: 3.5,
         show-back: false,
         show-radius-marker: true,
-        yaxis-x: 2.0,
+        radius-marker-x: 2.0,
         label-f: $sqrt(x)$,
         label-y: $sqrt(2)$,
       )

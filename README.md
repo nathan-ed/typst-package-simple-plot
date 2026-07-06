@@ -1,12 +1,16 @@
 # simple-plot
 
+[![Typst Universe](https://img.shields.io/badge/Typst_Universe-v._1.0.0-239dad?labelColor=eee)](https://typst.app/universe/package/simple-plot)
+[![Manual](https://img.shields.io/badge/Manual-pdf-333333?labelColor=eee)](https://github.com/nathan-ed/typst-package-simple-plot/blob/COMMIT_SHA/docs/manual.pdf)
+[![License](https://img.shields.io/badge/License-MIT-333333?labelColor=eee)](LICENSE)
+
 A simple, pgfplots-like function plotting library for Typst. Create beautiful mathematical plots with minimal code.
 
 > **Note:** This package is built on top of [CeTZ](https://github.com/cetz-package/cetz) v0.5.2.
 
 ## Manual
 
-A full manual is available in [docs/manual.pdf](https://github.com/nathan-ed/typst-package-simple-plot/blob/8289d754b723139d5d9e708cba01e9cc599c630c/docs/manual.pdf).
+A full manual is available in [docs/manual.pdf](https://github.com/nathan-ed/typst-package-simple-plot/blob/COMMIT_SHA/docs/manual.pdf).
 
 ## Gallery
 
@@ -20,7 +24,7 @@ Click on an image to see the source code.
 | Exponential & Logarithmic | Data with Model Fit | Marker Types |
 | [![Extended axes with custom tick labels and unit](gallery/extended-axes.svg)](gallery/extended-axes.typ) | [![Area fills, hatching, and Riemann sum overlays](gallery/area-features-1.svg)](gallery/area-features.typ) | [![3D-style volume of revolution with disk cross-sections](gallery/revolution-1.svg)](gallery/revolution.typ) |
 | Extended Axes | Area Fills & Riemann Sums | Volume of Revolution |
-| [![All five Riemann sum methods with annotation features](gallery/riemann-features-1.svg)](gallery/riemann-features.typ) | [![Zoom spy glass insets: rectangular and circular lens on a parabola and sine curve](gallery/zoom-spy.svg)](gallery/zoom-spy.typ) | |
+| [![All five Riemann sum methods with annotation features](gallery/riemann-features-1.svg)](gallery/riemann-features.typ) | [![Zoom spy glass insets: rectangular and circular lens, with fills and Riemann rectangles re-rendered inside the magnified view](gallery/zoom-spy.svg)](gallery/zoom-spy.typ) | |
 | Riemann Sum Features | Zoom / Spy Insets | |
 
 ## Features
@@ -194,20 +198,30 @@ Control the placement of function labels using `label-pos` and `label-side`:
 |-----------|------|---------|-------------|
 | `xmin`, `xmax` | float | -5, 5 | X-axis range |
 | `ymin`, `ymax` | float | -5, 5 | Y-axis range |
-| `width`, `height` | float | 6, 6 | Plot size in cm |
+| `width`, `height` | length/float | 6, 6 | Plot size — a length (`2cm`, `30mm`, ...) or a number in cm |
 | `scale` | float | 1 | Scale factor for the entire plot |
 | `xlabel`, `ylabel` | content | `$x$`, `$y$` | Axis labels (tkz-fct style: tucked beside the arrow tips) |
 | `show-grid` | bool/str | false | `true`, `false`, `"major"`, `"minor"`, `"both"` |
 | `minor-grid-step` | int | 5 | Minor grid subdivisions per major tick |
 | `grid-label-break` | bool | true | Gap in grid lines around tick labels |
-| `axis-x-pos` | float/str | 0 | X-axis position: value, `"bottom"`, `"center"` |
-| `axis-y-pos` | float/str | 0 | Y-axis position: value, `"left"`, `"center"` |
+| `axis-x-pos` | float/str/none | 0 | X-axis position: value, `"bottom"`, `"center"`; `none` hides the axis |
+| `axis-y-pos` | float/str/none | 0 | Y-axis position: value, `"left"`, `"center"`; `none` hides the axis |
 | `axis-x-extend` | float/array | (0, 0.5) | Extend X-axis beyond grid: value or `(left, right)` |
 | `axis-y-extend` | float/array | (0, 0.5) | Extend Y-axis beyond grid: value or `(bottom, top)` |
 | `show-origin` | bool | true | Show "0" label at origin |
+| `origin-label-offset` | array | (-0.11, -0.11) | Origin "0" label offset from (0,0) in cm |
+| `origin-label-anchor` | str | "north-east" | Origin "0" label anchor |
+| `origin-leader` | bool | true | Draw a subtle leader line from the origin label toward (0,0) |
+| `origin-leader-stroke` | stroke | `black + 0.6pt` | Origin leader stroke |
+| `origin-leader-gap` | float | 0.025 | Gap from (0,0) before the leader starts (cm) |
+| `origin-leader-end-gap` | float | 0.025 | Gap before the label anchor (cm) |
+| `tick-label-size` | length | 0.65em | Tick label font size |
+| `axis-label-size` | length | 0.8em | Axis label (x/y) font size |
 | `unit-label-only` | bool | false | Show only "1" on axes for minimal style |
 | `show-end-ticks` | bool | true | Keep the tick/label at `xmax`/`ymax` when it lands on a tick (e.g. show "5"), pushing the axis slightly past it so the arrow clears the label |
 | `font` | str/array | document font | Font applied to all generated text (tick labels, axis labels, origin, annotations) |
+| `style` | dictionary | none | Style overrides (see [Custom Styling](#custom-styling)) |
+| `series` | array | none | Pre-built array of series specs (alternative to positional args) |
 
 ### Axis Label Placement
 
@@ -277,14 +291,14 @@ them clear of the tick numbers (which sit below / left of the axis).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `fn` | function | — | Function to integrate |
+| `fn` | function | — | Function to integrate (positional or `fn:`) |
 | `domain` | array | plot range | `(a, b)` |
 | `n` | int | 4 | Number of rectangles |
 | `method` | str | `"right"` | `"left"`, `"right"`, `"mid"`, `"lower"`, `"upper"` |
 | `baseline` | float | 0 | Y-level of rectangle bases |
 | `color` | color | `luma(220)` | Rectangle fill |
 | `stroke` | stroke | `luma(80) + 0.6pt` | Rectangle border |
-| `hatch` | str/none | none | Hatch pattern: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"` |
+| `hatch` | str/dict/none | none | Hatch pattern: `"ne"`, `"nw"`, `"h"`, `"v"`, `"cross"`, `"grid"` — or `(style: "ne", spacing: 5pt, stroke: red + 1pt)` |
 | `hatch-spacing` | length | `5pt` | Spacing between hatch lines |
 | `hatch-stroke` | stroke | `luma(80) + 0.5pt` | Stroke for hatch lines |
 | `samples` | int | 20 | Samples per subinterval for `"lower"`/`"upper"` |
@@ -315,7 +329,7 @@ them clear of the tick numbers (which sit below / left of the axis).
   n-disks: 5,
   width: 8.0,
   height: 4.0,
-  show-yaxis: true,
+  show-y-axis: true,
   label-a: $0$,
   label-b: $4$,
   label-f: $f(x)=sqrt(x)$,
@@ -331,16 +345,17 @@ them clear of the tick numbers (which sit below / left of the axis).
 | `fn` | function | — | Profile function $y = f(x) > 0$ |
 | `domain` | array | `(0, 4)` | `(a, b)` — interval of revolution |
 | `n-disks` | int | 4 | Intermediate disk cross-sections to show |
-| `width`, `height` | float | 5, 3.5 | Canvas size in cm |
+| `width`, `height` | length/float | 5, 3.5 | Canvas size — a length or a number in cm |
 | `samples` | int | 60 | Profile sampling points |
 | `axis-y` | float | 0 | Y-value of revolution axis (default: x-axis) |
 | `axis-slope` | float | 0 | Slope $m$ of revolution axis: $y = mx + \text{axis\_y}$ |
 | `show-axis` | bool | true | Draw the revolution axis arrow |
-| `show-yaxis` | bool | false | Draw a coordinate y-axis (`show-y-axis` is the canonical spelling) |
-| `y-axis-x` / `yaxis-x` | auto/float | `auto` | X position for the y-axis; `auto` = left of volume |
+| `show-y-axis` | bool | false | Draw a coordinate y-axis (`show-yaxis` is a deprecated alias) |
+| `y-axis-x` | auto/float | `auto` | X position for the y-axis; `auto` = left of volume |
 | `y-axis-offset` | float | 0.45 | Gap between the y-axis and the volume when `y-axis-x: auto` |
 | `y-axis-extend` | array | `(0.35, 0.45)` | Y-axis padding `(below, above)` the volume |
-| `show-radius-marker` | bool | false | Draw a vertical radius dimension marker at `yaxis-x` |
+| `show-radius-marker` | bool | false | Draw a vertical radius dimension marker at `radius-marker-x` |
+| `radius-marker-x` | auto/float | `auto` | X position of the radius marker; `auto` = left cap (`yaxis-x` is a deprecated alias) |
 | `show-back` | bool | true | Draw the back face and bottom profile |
 | `show-labels` | bool | true | Show $a$, $b$, $f$ labels |
 | `profile-stroke` | stroke | `blue + 1.5pt` | Top profile curve |
@@ -430,6 +445,27 @@ them clear of the tick numbers (which sit below / left of the axis).
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [1.0.0] - 2026-07-06
+
+First stable release. The API documented in the manual is now considered stable.
+
+#### Added
+- **`width` / `height` accept lengths** — `plot`, `zoom`, `volume-of-revolution` (and the wrappers) now take real lengths (`width: 6cm`, `height: 30mm`) in addition to plain numbers, which keep their historical meaning of cm
+- **Named `fn:` in series helpers** — `fill-area`, `riemann-sum`, `func-plot` accept `fn:` (and `area-between` accepts `fn1:` / `fn2:`) in addition to the positional function, matching the `(fn: ..., ...)` series dictionaries
+- **`axis-x-pos: none` / `axis-y-pos: none` hide an axis** — the axis line, arrow, ticks and labels are skipped entirely (used by `limit-schema`, which previously drew an unintended y-axis)
+- **Unknown named arguments to `plot()` now raise an error** — typos like `xtick-lables:` were previously silently ignored
+- **Unified `hatch` argument** — `hatch` also accepts a dict `(style: "ne", spacing: 10pt, stroke: red + 1pt)` in `fill-area`, `area-between`, `riemann-sum` and `fill-closed`; the flat `hatch-spacing` / `hatch-stroke` arguments keep working as fallbacks
+- **`volume-of-revolution` cleanup** — `radius-marker-x` is the new canonical name for the radius-marker position (`yaxis-x` and `show-yaxis` remain accepted as deprecated aliases); unknown named arguments now raise an error
+- **`set-plot-defaults` validates option names** — a typo like `set-plot-defaults(widht: 10)` now raises an error instead of being silently stored and ignored
+- **Zoom insets re-render every series type** — `fill-area`, `area-between`, `fill-closed`, `riemann-sum` rectangles, `vline`/`hline` and parametric curves now appear inside `zoom()` insets (previously only function curves and point series did), correctly clipped to both the rectangular and the circular lens
+
+#### Fixed
+- **`compiler` requirement corrected to `0.13.0`** — the hatch patterns use `tiling()`, which does not exist before Typst 0.13; the manifest previously claimed 0.11.0
+- **Raw `(annotation: ...)` dicts default to 9pt** — aligned with the `note()` helper, which already used 9pt
+- **Thick hatch strokes no longer show holes** — hatch lines are extended past the tile boundary and repeated at the opposite corners, so `hatch-stroke` thicknesses comparable to `hatch-spacing` tile seamlessly
+- `plot-fn` now forwards `samples` to the drawn curve (it was only used for the auto y-range)
+- `zoom(box-fill: none)` now really makes the inset background transparent (the value was previously dropped and fell back to white)
 
 ### [0.9.1] - 2026-07-03
 
