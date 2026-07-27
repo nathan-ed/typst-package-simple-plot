@@ -25,6 +25,7 @@
   "origin-leader-end-gap",
   "tick-label-size", "axis-label-size", "font",
   "show-end-ticks", "min-tick-spacing", "hide-crossed-tick-labels",
+  "samples",
   "style",
 )
 
@@ -495,6 +496,11 @@
 ///   the step widens to the next nice value (default: 0.4)
 /// - hide-crossed-tick-labels (auto, bool): Hide tick labels crossed by a plotted
 ///   curve (default: true)
+/// - samples (auto, int): Number of sample points per function curve (default: 100).
+///   Higher values produce smoother curves at the cost of rendering time.
+///   When set at the plot level (or via set-plot-defaults), this value is used
+///   as the default for every function series that does not specify its own
+///   per-series samples.
 /// - style (none, dictionary): Style overrides
 /// - ..functions: Function/data specifications to plot
 #let plot(
@@ -542,6 +548,7 @@
   show-end-ticks: auto,
   min-tick-spacing: auto,
   hide-crossed-tick-labels: auto,
+  samples: auto,
   style: none,
   series: none,
   ..functions,
@@ -605,6 +612,12 @@
   let show-end-ticks = resolve(show-end-ticks, "show-end-ticks", true)
   let min-tick-spacing = resolve(min-tick-spacing, "min-tick-spacing", 0.4)
   let hide-crossed-tick-labels = resolve(hide-crossed-tick-labels, "hide-crossed-tick-labels", true)
+  // Resolve the plot-level samples override. The fallback value is auto, which
+  // means "use s.plot.samples from the merged default-style (currently 100)".
+  // When set explicitly (either directly or via set-plot-defaults), it overrides
+  // the default-style value; per-series samples in the series dict always take
+  // precedence over both.
+  let samples = resolve(samples, "samples", auto)
 
   // Apply a single font to every piece of text the plot generates
   // (tick labels, axis labels, origin label, annotations, ...).
@@ -640,6 +653,14 @@
   }
   if origin-leader-end-gap != auto {
     s.origin.leader-end-gap = origin-leader-end-gap
+  }
+  // Override the default-style plot samples when a plot-level samples value
+  // was provided. This makes the value available as the fallback default for
+  // all function series (fn:) that do not specify their own per-series samples.
+  // The fallback is read via func-spec.at("samples", default: s.plot.samples)
+  // in the main rendering loop and the zoom-inset re-rendering path.
+  if samples != auto {
+    s.plot.samples = samples
   }
 
   // Scale factors in CeTZ canvas units
