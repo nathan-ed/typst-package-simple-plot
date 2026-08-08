@@ -1,4 +1,4 @@
-#import "@preview/simple-plot:1.0.0": plot, plot-fn, plot-rational, limit-schema, schema-lim, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, zoom, set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:1.0.1": plot, plot-fn, plot-rational, limit-schema, schema-lim, scatter, data, line-plot, func-plot, parametric, fill-closed, fill-area, area-between, riemann-sum, note, vline, hline, volume-of-revolution, solid-of-revolution, zoom, set-plot-defaults, reset-plot-defaults
 
 // =============================================================================
 // DOCUMENT SETUP
@@ -136,7 +136,7 @@
 Import the package in your Typst document:
 
 ```typst
-#import "@preview/simple-plot:1.0.0": plot
+#import "@preview/simple-plot:1.0.1": plot
 ```
 
 == Quick Start

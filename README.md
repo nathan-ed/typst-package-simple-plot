@@ -48,7 +48,7 @@ Click on an image to see the source code.
 ## Quick Start
 
 ```typst
-#import "@preview/simple-plot:1.0.0": plot
+#import "@preview/simple-plot:1.0.1": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -65,7 +65,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Plotting Functions
 
 ```typst
-#import "@preview/simple-plot:1.0.0": plot
+#import "@preview/simple-plot:1.0.1": plot
 
 // Single function
 #plot(
@@ -87,7 +87,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Scatter Plots
 
 ```typst
-#import "@preview/simple-plot:1.0.0": plot, data
+#import "@preview/simple-plot:1.0.1": plot, data
 
 #plot(
   xmin: 0, xmax: 10,
@@ -104,7 +104,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Line Plots with Markers
 
 ```typst
-#import "@preview/simple-plot:1.0.0": plot, line-plot
+#import "@preview/simple-plot:1.0.1": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -167,7 +167,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 `plot-rational` is a thin wrapper around `plot` with defaults suited to rational-function exercises: centered axes, a visible grid, and one main function curve. Extra positional arguments are forwarded as additional series, so asymptotes and points can be added normally.
 
 ```typst
-#import "@preview/simple-plot:1.0.0": plot-rational, hline
+#import "@preview/simple-plot:1.0.1": plot-rational, hline
 
 #plot-rational(
   x => (x + 1) / (x - 2),
@@ -183,7 +183,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 `limit-schema` draws compact schematic behavior near a point `a`. Use finite numbers for one-sided limits, `"+oo"` / `"-oo"` for vertical asymptotic behavior, and `val` for the defined value at the point. `schema-lim` is available as an alias.
 
 ```typst
-#import "@preview/simple-plot:1.0.0": limit-schema
+#import "@preview/simple-plot:1.0.1": limit-schema
 
 #limit-schema(a: 1, left: 4, right: 4)              // removable hole
 #limit-schema(a: 2, left: "+oo", right: "-oo")      // vertical asymptote
@@ -269,7 +269,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Riemann Sums
 
 ```typst
-#import "@preview/simple-plot:1.0.0": plot, riemann-sum
+#import "@preview/simple-plot:1.0.1": plot, riemann-sum
 
 #plot(
   xmin: 0, xmax: 3, ymin: 0, ymax: 5,
@@ -321,7 +321,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Volume of Revolution
 
 ```typst
-#import "@preview/simple-plot:1.0.0": volume-of-revolution
+#import "@preview/simple-plot:1.0.1": volume-of-revolution
 
 #volume-of-revolution(
   x => calc.sqrt(x),
@@ -338,11 +338,33 @@ them clear of the tick numbers (which sit below / left of the axis).
 
 `solid-of-revolution` is an alias for backward compatibility.
 
+### Hollow solids (washers)
+
+Pass `inner-fn` to revolve the region *between* two curves. The end caps become
+annuli and every cross-section becomes a washer — the picture that goes with
+$V = \pi \int_a^b \left( f(x)^2 - g(x)^2 \right) \, dx$:
+
+```typst
+#volume-of-revolution(
+  x => 1.6 + 0.25 * x,            // outer radius
+  inner-fn: x => 0.5 + 0.18 * x,  // inner radius (the hole)
+  domain: (0.0, 4.0),
+  n-disks: 4,
+  label-f: $f$,
+  label-inner: $g$,
+)
+```
+
+`inner-fn` must satisfy $0 \le g(x) \le f(x)$ on the domain: larger values are
+clamped to the outer radius, and a hole that would leave no material is not
+drawn.
+
 ### `volume-of-revolution` Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `fn` | function | — | Profile function $y = f(x) > 0$ |
+| `fn` | function | — | Outer profile function $y = f(x) > 0$ |
+| `inner-fn` | function/none | `none` | Inner profile $0 \le g(x) \le f(x)$; makes the solid hollow |
 | `domain` | array | `(0, 4)` | `(a, b)` — interval of revolution |
 | `n-disks` | int | 4 | Intermediate disk cross-sections to show |
 | `width`, `height` | length/float | 5, 3.5 | Canvas size — a length or a number in cm |
@@ -361,9 +383,12 @@ them clear of the tick numbers (which sit below / left of the axis).
 | `profile-stroke` | stroke | `blue + 1.5pt` | Top profile curve |
 | `disk-color` | color | `luma(218)` | Solid body fill |
 | `disk-stroke` | stroke | `luma(90) + 0.6pt` | Disk edge stroke |
+| `inner-stroke` | auto/stroke | `auto` | Inner profile stroke; `auto` = dashed, in the `profile-stroke` colour |
+| `hole-color` | color | `white` | Fill of the opening at the annular end caps |
 | `axis-stroke` | stroke | `black + 0.7pt` | Revolution axis stroke |
 | `label-a`, `label-b` | content | `$a$`, `$b$` | Domain endpoint labels |
-| `label-f` | content | `$f$` | Function label |
+| `label-f` | content | `$f$` | Outer profile label |
+| `label-inner` | content/none | `none` | Inner profile label (hollow solids) |
 | `label-y` | content | `$y$` | Y-axis label |
 
 ## Marker Types
@@ -413,7 +438,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Setting Global Defaults
 
 ```typst
-#import "@preview/simple-plot:1.0.0": set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:1.0.1": set-plot-defaults, reset-plot-defaults
 
 #set-plot-defaults(width: 6, height: 4, show-grid: "major")
 
@@ -445,6 +470,14 @@ them clear of the tick numbers (which sit below / left of the axis).
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [1.0.1] - 2026-08-08
+
+#### Added
+- **Hollow solids of revolution** — `volume-of-revolution` accepts `inner-fn`, revolving the region between two curves. End caps become annuli and every cross-section becomes a washer, which is the picture behind $V = \pi \int (f^2 - g^2)$. Comes with `inner-stroke`, `hole-color` and `label-inner`; an inner radius larger than the outer one is clamped, and a hole leaving no material is not drawn
+
+#### Fixed
+- **`volume-of-revolution`: the closing cap at $x = b$ had no visible rim** — the right cap was filled before the body and only its *back* arc was stroked, so the body fill painted over it and the solid ended in an outline-less grey bulge. The rim is now stroked after the body, matching the left cap and the intermediate cross-sections. Affects every solid, including `show-back: false` half-views and oblique `axis-slope` axes
 
 ### [1.0.0] - 2026-07-06
 

@@ -3298,7 +3298,13 @@
 /// Rotates the region between y = fn(x) and y = axis-y from x=a to x=b.
 /// Renders a perspective view with profile curves, end caps, and disk cross-sections.
 ///
-/// - fn: profile function y = f(x) > 0
+/// - fn: outer profile function y = f(x) > 0
+/// - inner-fn: optional inner profile 0 <= g(x) <= f(x). When given, the solid
+///   is hollow: the end caps become annuli and every cross-section is a washer,
+///   which is what `V = pi integral (f^2 - g^2)` computes.
+/// - inner-stroke: stroke for the inner profile (auto = dashed, hidden-line style)
+/// - hole-color: fill of the opening at the end caps (default `white`)
+/// - label-inner: label for the inner profile
 /// - domain: (a, b) — interval of revolution
 /// - axis-y: y-value of the horizontal axis of revolution (default: 0, the x-axis)
 /// - n-disks: number of intermediate circular cross-sections to show
@@ -3312,6 +3318,7 @@
 /// - profile-stroke: stroke for the top profile curve
 /// - disk-color: fill color for the solid body
 /// - label-a, label-b, label-f: content for axis position labels and function label
+/// - label-pos: where `label-f` / `label-inner` sit along the domain, 0 = a, 1 = b
 ///
 /// Example:
 /// ```typst
@@ -3319,6 +3326,7 @@
 /// ```
 #let volume-of-revolution(
   fn,
+  inner-fn: none,
   domain: (0.0, 4.0),
   n-disks: 4,
   width: 5.0,
@@ -3338,10 +3346,14 @@
   profile-stroke: blue + 1.5pt,
   disk-color: luma(218),
   disk-stroke: luma(90) + 0.6pt,
+  inner-stroke: auto,
+  hole-color: white,
   axis-stroke: black + 0.7pt,
   label-a: $a$,
   label-b: $b$,
   label-f: $f$,
+  label-inner: none,
+  label-pos: 0.18,
   label-y: $y$,
   ..legacy,
 ) = {
@@ -3405,6 +3417,11 @@
       let v = float(raw)
       if v.is-nan() { 0.0 } else { perp-r(px, v) * y-sc }
     }
+  }
+
+  // Resolved here, not inside the canvas: `cetz.draw` shadows `stroke`.
+  let resolved-inner-stroke = if inner-stroke != auto { inner-stroke } else {
+    (paint: stroke(profile-stroke).paint, thickness: 0.9pt, dash: "dashed")
   }
 
   cetz.canvas(length: 1cm, {
@@ -3472,22 +3489,82 @@
       }
     }
 
-    // Right cap at x=b, drawn first so the closing disk sits behind the body.
+    // Profile values at the two domain endpoints, reused by the caps and labels.
+    let ya = fn(a)
     let yb = fn(b)
-    if yb != none {
-      let fyb = float(yb)
-      let ex = cx(b, fyb)
-      let radius = safe-cr(yb, b)
-      if radius > 0.02 {
-        if show-back {
-          line(..ellipse-full(ex, radius), close: true, fill: disk-color, stroke: none)
-          line(..ellipse-half(ex, radius, "back"), stroke: (paint: luma(140), thickness: 0.4pt, dash: "dashed"))
-        } else {
-          line(..ellipse-half(ex, radius, "upper"), close: true, fill: disk-color, stroke: none)
-          line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
+
+    // Hollow solids: sample the inner profile on the same grid as the outer one.
+    let has-hole = inner-fn != none
+    let inner-radius(px) = {
+      if not has-hole { 0.0 } else {
+        let iy = inner-fn(px)
+        if iy == none { 0.0 } else {
+          let v = float(iy)
+          if v.is-nan() { 0.0 } else { calc.min(perp-r(px, v) * y-sc, safe-cr(fn(px), px)) }
         }
       }
     }
+    let in-top-pts = ()
+    let in-bot-pts = ()
+    if has-hole {
+      for i in range(n-s + 1) {
+        let x = a + i * step
+        let y = fn(x)
+        if y != none and not float(y).is-nan() {
+          let r = inner-radius(x)
+          if r > 0.0 {
+            let ex = cx(x, float(y))
+            in-top-pts.push((ex, axis-cy + r))
+            in-bot-pts.push((ex, axis-cy - r))
+          }
+        }
+      }
+    }
+    // Grey disk behind the body, so the closing cap bulges past the silhouette.
+    let cap-fill(px) = {
+      let y = fn(px)
+      if y != none {
+        let radius = safe-cr(y, px)
+        if radius > 0.02 {
+          let ex = cx(px, float(y))
+          if show-back {
+            line(..ellipse-full(ex, radius), close: true, fill: disk-color, stroke: none)
+          } else {
+            line(..ellipse-half(ex, radius, "upper"), close: true, fill: disk-color, stroke: none)
+          }
+        }
+      }
+    }
+
+    // Visible rim of a cap: outer ellipse (front solid, back dashed) and, for a
+    // hollow solid, the opening punched out and its own rim stroked.
+    let cap-rim(px) = {
+      let y = fn(px)
+      if y != none {
+        let radius = safe-cr(y, px)
+        if radius > 0.02 {
+          let ex = cx(px, float(y))
+          let ir = inner-radius(px)
+          // Skip degenerate holes: nothing to punch when no material is left.
+          if has-hole and ir > 0.02 and ir < radius - 0.02 {
+            if show-back {
+              line(..ellipse-full(ex, ir), close: true, fill: hole-color, stroke: disk-stroke)
+            } else {
+              line(..ellipse-half(ex, ir, "upper"), close: true, fill: hole-color, stroke: disk-stroke)
+            }
+          }
+          if show-back {
+            line(..ellipse-half(ex, radius, "back"), stroke: dashed-stroke)
+            line(..ellipse-half(ex, radius, "front"), stroke: disk-stroke)
+          } else {
+            line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
+            line(..ellipse-half(ex, radius, "upper-front"), stroke: disk-stroke)
+          }
+        }
+      }
+    }
+
+    cap-fill(b)
 
     // Filled solid body
     if top-pts.len() > 0 {
@@ -3501,7 +3578,13 @@
       }
     }
 
-    // Intermediate disk cross-sections
+    // Inner wall of a hollow solid: hidden behind the body, so dashed.
+    if has-hole and in-top-pts.len() > 1 {
+      line(..in-top-pts, stroke: resolved-inner-stroke)
+      if show-back { line(..in-bot-pts, stroke: resolved-inner-stroke) }
+    }
+
+    // Intermediate cross-sections: disks, or washers when the solid is hollow
     for i in range(1, n-disks + 1) {
       let xd = a + i * (b - a) / (n-disks + 1)
       let yd = fn(xd)
@@ -3517,6 +3600,16 @@
             line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
             line(..ellipse-half(ex, radius, "upper-front"), stroke: disk-stroke)
           }
+          let ir = inner-radius(xd)
+          if has-hole and ir > 0.02 {
+            if show-back {
+              line(..ellipse-half(ex, ir, "back"), stroke: dashed-stroke)
+              line(..ellipse-half(ex, ir, "front"), stroke: disk-stroke)
+            } else {
+              line(..ellipse-half(ex, ir, "upper-back"), stroke: dashed-stroke)
+              line(..ellipse-half(ex, ir, "upper-front"), stroke: disk-stroke)
+            }
+          }
         }
       }
     }
@@ -3527,28 +3620,16 @@
     }
 
     // Left cap at x=a
-    let ya = fn(a)
-    if ya != none {
-      let fya = float(ya)
-      let ex = cx(a, fya)
-      let radius = safe-cr(ya, a)
-      if radius > 0.02 {
-        if show-back {
-          line(..ellipse-full(ex, radius), close: true, fill: disk-color, stroke: none)
-          line(..ellipse-half(ex, radius, "back"), stroke: (paint: luma(170), thickness: 0.4pt, dash: "dashed"))
-          line(..ellipse-half(ex, radius, "front"), stroke: (paint: luma(100), thickness: 0.5pt))
-        } else {
-          line(..ellipse-half(ex, radius, "upper"), close: true, fill: disk-color, stroke: none)
-          line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
-          line(..ellipse-half(ex, radius, "upper-front"), stroke: (paint: luma(100), thickness: 0.5pt))
-        }
-      }
-    }
+    cap-fill(a)
+    cap-rim(a)
 
     // Top profile
     if top-pts.len() > 1 {
       line(..top-pts, stroke: profile-stroke)
     }
+
+    // Closing cap at x=b, stroked last so its rim sits above the body it bounds.
+    cap-rim(b)
 
     let coord-y-axis-x = if draw-coordinate-y-axis {
       if y-axis-x == auto {
@@ -3601,11 +3682,15 @@
       line((cx-b, axis-cy + tick), (cx-b, axis-cy - tick), stroke: axis-stroke)
       content((cx-a, axis-cy - (tick + 0.08)), label-a, anchor: "north")
       content((cx-b, axis-cy - (tick + 0.08)), label-b, anchor: "north")
-      let lx = a + (b - a) * 0.18
+      let lx = a + (b - a) * calc.max(0.0, calc.min(1.0, label-pos))
       let ly = fn(lx)
       if ly != none {
         let fly = float(ly)
         content((cx(lx, fly), axis-cy + safe-cr(ly, lx) + 0.22), label-f, anchor: "south")
+        // Inner label sits in the annulus, just above the top of the hole.
+        if label-inner != none and inner-radius(lx) > 0.02 {
+          content((cx(lx, fly), axis-cy + inner-radius(lx) + 0.10), label-inner, anchor: "south")
+        }
       }
     }
   })

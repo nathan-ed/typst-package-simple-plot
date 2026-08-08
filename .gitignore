@@ -1,0 +1,2 @@
+# Test render output. docs/manual.pdf is tracked on purpose: the README links to it.
+/tests/*.pdf
