@@ -220,6 +220,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 | `unit-label-only` | bool | false | Show only "1" on axes for minimal style |
 | `show-end-ticks` | bool | true | Keep the tick/label at `xmax`/`ymax` when it lands on a tick (e.g. show "5"), pushing the axis slightly past it so the arrow clears the label |
 | `font` | str/array | document font | Font applied to all generated text (tick labels, axis labels, origin, annotations) |
+| `label-sizing` | str | `"inherit"` | `"inherit"`: generated text takes the surrounding document text size. `"plot"`: it takes the plot's own `tick-label-size` / `axis-label-size` and follows `scale`, so the plot keeps its proportions inside unusually large or small body text |
 | `style` | dictionary | none | Style overrides (see [Custom Styling](#custom-styling)) |
 | `series` | array | none | Pre-built array of series specs (alternative to positional args) |
 
@@ -474,6 +475,7 @@ MIT License — see LICENSE file for details.
 ### [1.0.1] - 2026-08-08
 
 #### Added
+- **`label-sizing` on `plot`** — `"inherit"` (default, unchanged behaviour) lets generated text take the surrounding document text size; `"plot"` makes it take the plot's own label sizes and follow `scale`, so a plot keeps its proportions when the document body text is unusually large or small. Also settable through `set-plot-defaults`
 - **Hollow solids of revolution** — `volume-of-revolution` accepts `inner-fn`, revolving the region between two curves. End caps become annuli and every cross-section becomes a washer, which is the picture behind $V = \pi \int (f^2 - g^2)$. Comes with `inner-stroke`, `hole-color` and `label-inner`; an inner radius larger than the outer one is clamped, and a hole leaving no material is not drawn
 
 #### Fixed

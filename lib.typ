@@ -23,7 +23,7 @@
   "show-origin", "origin-label-offset", "origin-label-anchor",
   "origin-leader", "origin-leader-stroke", "origin-leader-gap",
   "origin-leader-end-gap",
-  "tick-label-size", "axis-label-size", "font",
+  "tick-label-size", "axis-label-size", "font", "label-sizing",
   "show-end-ticks", "min-tick-spacing", "hide-crossed-tick-labels",
   "style",
 )
@@ -539,6 +539,7 @@
   tick-label-size: auto,
   axis-label-size: auto,
   font: auto,
+  label-sizing: auto,
   show-end-ticks: auto,
   min-tick-spacing: auto,
   hide-crossed-tick-labels: auto,
@@ -640,6 +641,30 @@
   }
   if origin-leader-end-gap != auto {
     s.origin.leader-end-gap = origin-leader-end-gap
+  }
+
+  // How text inside the CeTZ canvas is sized:
+  //   "inherit" — labels take the surrounding document text size (default)
+  //   "plot"    — labels take the plot's own style sizes and follow `scale`,
+  //               so a plot keeps its proportions inside a document whose body
+  //               text is larger or smaller than usual.
+  let label-sizing = resolve(label-sizing, "label-sizing", "inherit")
+  assert(label-sizing in ("inherit", "plot"),
+    message: "plot: label-sizing must be \"inherit\" or \"plot\", got: " + repr(label-sizing))
+  let own-label-size = label-sizing == "plot"
+  if scale != 1 and own-label-size {
+    s.ticks.label-size *= scale
+    s.labels.size *= scale
+  }
+  let plot-label(body) = if own-label-size {
+    apply-font(text(size: s.labels.size, fill: s.labels.fill)[#body])
+  } else {
+    apply-font(body)
+  }
+  let plot-tick-label(body) = if own-label-size {
+    apply-font(text(size: s.ticks.label-size, fill: s.ticks.label-fill)[#body])
+  } else {
+    apply-font(body)
   }
 
   // Scale factors in CeTZ canvas units
@@ -1633,7 +1658,7 @@
           let label-anchor = if label-side != none { side-to-anchor(label-side) } else { func-spec.at("label-anchor", default: "south-west") }
           let idx = calc.min(int(canvas-points.len() * label-pos), canvas-points.len() - 1)
           let (cx, cy) = canvas-points.at(idx)
-          content((cx, cy), apply-font(label), anchor: label-anchor)
+          content((cx, cy), plot-label(label), anchor: label-anchor)
         }
 
       // ── Fill below a single function to a baseline ─────────────────────
@@ -1813,7 +1838,7 @@
                mark: (start: (symbol: "stealth", fill: black, scale: 0.35),
                       end:   (symbol: "stealth", fill: black, scale: 0.35)),
                stroke: black + 0.5pt)
-          content(((cxl + cxr) / 2, arrow-y + a-dir * 0.06), r-dx-label,
+          content(((cxl + cxr) / 2, arrow-y + a-dir * 0.06), if own-label-size { plot-tick-label(r-dx-label) } else { r-dx-label },
                   anchor: if flip-up { "south" } else { "north" })
         }
 
@@ -1844,7 +1869,7 @@
             // baseline 0); otherwise the label can sit centered on the axis.
             let axis-in-row = if flip-up { ymax > r-base + 1e-9 } else { ymin < r-base - 1e-9 }
             let x-shift = if axis-in-row and calc.abs(x - y-axis-x) < 0.001 { 0.35 } else { 0.0 }
-            content((cx + x-shift, cy + a-dir * 0.20), apply-font(lbl),
+            content((cx + x-shift, cy + a-dir * 0.20), plot-tick-label(lbl),
                     anchor: if flip-up { "south" } else { "north" })
           }
         }
@@ -1879,7 +1904,7 @@
                    mark: (end: (symbol: "stealth", fill: black, scale: 0.35)),
                    stroke: black + 0.5pt)
             }
-            content((lx, ly), apply-font(lbl-text), anchor: "center")
+            content((lx, ly), plot-label(lbl-text), anchor: "center")
           }
           // Dots on top
           for (px, py) in eval-pts {
@@ -2150,7 +2175,7 @@
 
         if best != none {
           let (_, pt, anchor, b) = best
-          content(pt, apply-font(req.label), anchor: anchor)
+          content(pt, plot-label(req.label), anchor: anchor)
           placed-boxes.push(b)
         }
       }

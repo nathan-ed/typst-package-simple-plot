@@ -11,6 +11,9 @@
 //  4. show-points sprayed a method label with arrows to every dot by default.
 //  5. Tick labels and axis labels painted a white background box on top of
 //     area fills (the fills render first), punching white holes into them.
+//  6. CeTZ labels always inherited the surrounding document font size, with
+//     no way to make them follow the plot's own scale and label styles
+//     (now `label-sizing: "plot"`).
 //
 // The assert blocks fail compilation if the geometry regresses; the plots
 // below them are the exact user-reported configurations for visual checks.
@@ -133,3 +136,37 @@
     color: blue.lighten(75%)),
   (fn: f, stroke: blue + 1.5pt),
 )
+
+// Large surrounding type. With label-sizing: "plot", every label inside the
+// scaled plot (including custom x_i and Delta x) must keep the plot's own
+// proportional font size instead of inheriting 18pt from this block.
+#text(size: 18pt)[
+  #plot(
+    xmin: -0.12, xmax: 1.12, ymin: -0.28, ymax: 1.15,
+    width: 6.0, height: 3.6, scale: 0.8,
+    label-sizing: "plot",
+    xtick: none, ytick-labels: none, show-origin: false,
+    riemann-sum(
+      f,
+      domain: (0.0, 1.0),
+      n: 6,
+      method: "left",
+      show-dx: true,
+      show-xi: true,
+      xi-labels: ($x_0$, $x_1$, $x_2$, $dots$, $x_(n-2)$, $x_(n-1)$, $x_n$),
+    ),
+    (fn: f, label: $f(x)=x^2$),
+  )
+]
+
+// Same plot with the default label-sizing: "inherit" — labels follow the 18pt
+// body text. Side by side with the block above, this is what the option does.
+#text(size: 18pt)[
+  #plot(
+    xmin: -0.12, xmax: 1.12, ymin: -0.28, ymax: 1.15,
+    width: 6.0, height: 3.6, scale: 0.8,
+    xtick: none, ytick-labels: none, show-origin: false,
+    riemann-sum(f, domain: (0.0, 1.0), n: 6, method: "left", show-dx: true),
+    (fn: f, label: $f(x)=x^2$),
+  )
+]
