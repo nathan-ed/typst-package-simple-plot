@@ -1,7 +1,7 @@
 //
 // area-features.typ — Gallery for area fills, hatching and Riemann overlays
 //
-#import "@preview/simple-plot:1.0.1": plot, fill-area, area-between, note, vline, hline, riemann-sum
+#import "@preview/simple-plot:1.1.0": plot, fill-area, area-between, note, vline, hline, riemann-sum
 
 #set page(margin: 1.5cm, width: 21cm)
 #set text(font: "New Computer Modern", size: 10pt)

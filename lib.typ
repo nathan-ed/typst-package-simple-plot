@@ -23,7 +23,8 @@
   "show-origin", "origin-label-offset", "origin-label-anchor",
   "origin-leader", "origin-leader-stroke", "origin-leader-gap",
   "origin-leader-end-gap",
-  "tick-label-size", "axis-label-size", "font", "label-sizing",
+  "tick-label-size", "axis-label-size", "label-bg", "tick-label-bg",
+  "font", "label-sizing",
   "show-end-ticks", "min-tick-spacing", "hide-crossed-tick-labels",
   "style",
 )
@@ -180,6 +181,33 @@
       message: name + ": expected one function (positional or fn:)")
     args.pos().first()
   }
+}
+
+// Merge consecutive clipped segments into polylines.
+//
+// A curve is sampled into hundreds of tiny segments. Drawing them one `line()`
+// at a time restarts the stroke at every sample, so a dash pattern never gets
+// far enough to show a gap and the curve reads as a solid line — the narrower
+// the plot, the more solid it looks (issue #11). Segments that share an
+// endpoint belong to one stroke and are drawn as a single polyline.
+#let merge-segment-runs(segments) = {
+  let runs = ()
+  let current = ()
+  for (p1, p2) in segments {
+    if current.len() == 0 {
+      current = (p1, p2)
+    } else {
+      let last = current.last()
+      if calc.abs(last.at(0) - p1.at(0)) < 1e-9 and calc.abs(last.at(1) - p1.at(1)) < 1e-9 {
+        current.push(p2)
+      } else {
+        runs.push(current)
+        current = (p1, p2)
+      }
+    }
+  }
+  if current.len() > 0 { runs.push(current) }
+  runs
 }
 
 // Clip a line segment to a rectangle (all 4 edges) using Liang-Barsky
@@ -485,6 +513,10 @@
 /// - origin-leader-gap (auto, float): Gap from origin before leader starts, in cm (default: 0.025)
 /// - origin-leader-end-gap (auto, float): Gap before the label anchor, in cm (default: 0.025)
 /// - tick-label-size (auto, length): Font size for tick labels (default: 0.65em)
+/// - label-bg (auto, color, none): Background painted behind the axis labels
+///   when a grid line or a curve runs behind them. `none` disables it, which
+///   is what you want on a coloured page (default: white)
+/// - tick-label-bg (auto, color, none): Same, for the tick labels (default: white)
 /// - axis-label-size (auto, length): Font size for axis labels x/y (default: 0.8em)
 /// - font (auto, str, array): Font applied to every text the plot generates
 ///   (tick labels, axis labels, origin, annotations). Default: document font.
@@ -537,6 +569,8 @@
   origin-leader-gap: auto,
   origin-leader-end-gap: auto,
   tick-label-size: auto,
+  label-bg: auto,
+  tick-label-bg: auto,
   axis-label-size: auto,
   font: auto,
   label-sizing: auto,
@@ -601,6 +635,8 @@
   let origin-leader-gap = resolve(origin-leader-gap, "origin-leader-gap", auto)
   let origin-leader-end-gap = resolve(origin-leader-end-gap, "origin-leader-end-gap", auto)
   let tick-label-size = resolve(tick-label-size, "tick-label-size", auto)
+  let label-bg = resolve(label-bg, "label-bg", auto)
+  let tick-label-bg = resolve(tick-label-bg, "tick-label-bg", auto)
   let axis-label-size = resolve(axis-label-size, "axis-label-size", auto)
   let font = resolve(font, "font", auto)
   let show-end-ticks = resolve(show-end-ticks, "show-end-ticks", true)
@@ -623,6 +659,12 @@
   }
   if axis-label-size != auto {
     s.labels.size = axis-label-size
+  }
+  if label-bg != auto {
+    s.labels.bg = label-bg
+  }
+  if tick-label-bg != auto {
+    s.ticks.label-bg = tick-label-bg
   }
   if origin-label-offset != auto {
     s.origin.label-offset = origin-label-offset
@@ -886,10 +928,16 @@
       let w = est-width(y)
       (right - w, cy - est-char-h / 2, right, cy + est-char-h / 2)
     }
-    let origin-label-box() = {
+    // Box the "0" would occupy for a given offset and anchor. The anchor names
+    // the corner of the text pinned to the offset point, so it decides which
+    // way the glyph extends.
+    let origin-label-box-at(dx0, dy0, anchor) = {
       let (ox, oy) = to-canvas(0, 0)
-      let (dx0, dy0) = s.origin.label-offset
-      (ox + dx0 - est-char-w, oy + dy0 - est-char-h, ox + dx0, oy + dy0)
+      let x = ox + dx0
+      let y = oy + dy0
+      let left = if anchor in ("north-east", "south-east") { x - est-char-w } else { x }
+      let bottom = if anchor in ("north-east", "north-west") { y - est-char-h } else { y }
+      (left, bottom, left + est-char-w, bottom + est-char-h)
     }
 
     // ── Pre-sampled curve polylines ────────────────────────────────────────
@@ -1013,6 +1061,39 @@
     // in which case the least-crossed one is kept as the scale indicator.
     // Guide polylines (points series, e.g. dashed asymptotes) do not hide
     // labels: a label under a vertical asymptote locates it and stays.
+    // Where the origin "0" goes. The default corner (down-left of the origin)
+    // is kept whenever it is free. When a curve runs through it — which is the
+    // common case for y = x, y = x^2 or sin — the other three corners are
+    // tried before giving up and dropping the label, so a curve through the
+    // origin no longer costs the reader the zero (issue #9). A placement set
+    // explicitly by the caller is never second-guessed.
+    let origin-dx = s.origin.label-offset.at(0)
+    let origin-dy = s.origin.label-offset.at(1)
+    let origin-anchor = s.origin.label-anchor
+    if (show-origin and hide-crossed-tick-labels and fn-obstacle-segs.len() > 0
+        and origin-label-offset == auto and origin-label-anchor == auto
+        and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001) {
+      let crossed(box) = fn-obstacle-segs.any(((p1, p2)) => seg-hits-box(p1, p2, box))
+      if crossed(origin-label-box-at(origin-dx, origin-dy, origin-anchor)) {
+        let dx = calc.abs(origin-dx)
+        let dy = calc.abs(origin-dy)
+        let alternatives = (
+          (-dx,  dy, "south-east"),   // up and to the left
+          ( dx, -dy, "north-west"),   // down and to the right
+          ( dx,  dy, "south-west"),   // up and to the right
+        )
+        for (ax, ay, anchor) in alternatives {
+          if not crossed(origin-label-box-at(ax, ay, anchor)) {
+            origin-dx = ax
+            origin-dy = ay
+            origin-anchor = anchor
+            break
+          }
+        }
+      }
+    }
+    let origin-label-box() = origin-label-box-at(origin-dx, origin-dy, origin-anchor)
+
     let hidden-x = ()
     let hidden-y = ()
     let origin-hidden = false
@@ -1161,11 +1242,29 @@
         }
       }
 
+      // The label actually drawn at a tick when the caller supplied an array:
+      // `none` when that entry blanks the tick. Grid gaps are for labels that
+      // exist — an empty string draws nothing, so it must not open one — and
+      // their width comes from the custom text, not from the number it stands
+      // in for.
+      let custom-label(labels, i) = {
+        if type(labels) != array { return auto }
+        let l = if i < labels.len() { labels.at(i) } else { "" }
+        if type(l) == content { l }
+        else if l == "" or l == "0" { none }
+        else { l }
+      }
+      let custom-width(l) = if type(l) == str { l.len() * char-width } else { none }
+
       // X-axis tick labels (below axis, anchor "north")
-      for x in x-ticks.ticks {
-        if x-has-label(x) and not is-hidden-x(x) and (xmax-on-tick or calc.abs(x - xmax) > 0.0001) {
+      for (i, x) in x-ticks.ticks.enumerate() {
+        let custom = custom-label(xtick-labels, i)
+        if custom == none { continue }
+        let has-label = if custom == auto { x-has-label(x) } else { true }
+        if has-label and not is-hidden-x(x) and (xmax-on-tick or calc.abs(x - xmax) > 0.0001) {
           let cx = (x - xmin) * x-scale
-          let text-width = calc-text-width(x)
+          let w = if custom == auto { none } else { custom-width(custom) }
+          let text-width = if w == none { calc-text-width(x) } else { w }
           let anchor-x = cx
           let anchor-y = y-ax-canvas - tick-len - label-offset
 
@@ -1179,10 +1278,14 @@
       }
 
       // Y-axis tick labels (left of axis, anchor "east")
-      for y in y-ticks.ticks {
-        if y-has-label(y) and not is-hidden-y(y) and (ymax-on-tick or calc.abs(y - ymax) > 0.0001) {
+      for (i, y) in y-ticks.ticks.enumerate() {
+        let custom = custom-label(ytick-labels, i)
+        if custom == none { continue }
+        let has-label = if custom == auto { y-has-label(y) } else { true }
+        if has-label and not is-hidden-y(y) and (ymax-on-tick or calc.abs(y - ymax) > 0.0001) {
           let cy = (y - ymin) * y-scale
-          let text-width = calc-text-width(y)
+          let w = if custom == auto { none } else { custom-width(custom) }
+          let text-width = if w == none { calc-text-width(y) } else { w }
           let anchor-x = x-ax-canvas - tick-len - label-offset
           let anchor-y = cy
 
@@ -1195,26 +1298,14 @@
         }
       }
 
-      // Origin label zone (anchor "north-east", text extends down and left)
+      // Origin label zone. It follows the corner the label actually ended up
+      // in, which is not always the default one (see origin-anchor above).
       if show-origin and not origin-hidden and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
-        let (ox, oy) = to-canvas(0, 0)
-        let anchor-x = ox - tick-len - 0.05
-        let anchor-y = oy - tick-len - 0.05
-        let text-width = char-width  // Single "0"
+        let (bx1, by1, bx2, by2) = origin-label-box()
 
         // Origin label can intersect both vertical and horizontal grid lines
-        x-break-zones.push((
-          anchor-x - text-width - pad-x,
-          anchor-x + pad-x,
-          anchor-y - char-height - pad-y,
-          anchor-y + pad-y,
-        ))
-        y-break-zones.push((
-          anchor-y - char-height - pad-y,
-          anchor-y + pad-y,
-          anchor-x - text-width - pad-x,
-          anchor-x + pad-x,
-        ))
+        x-break-zones.push((bx1 - pad-x, bx2 + pad-x, by1 - pad-y, by2 + pad-y))
+        y-break-zones.push((by1 - pad-y, by2 + pad-y, bx1 - pad-x, bx2 + pad-x))
       }
     }
 
@@ -1376,15 +1467,68 @@
         let bg = s.ticks.at("label-bg", default: white)
         if bg != none and crossed { box(fill: bg, inset: (x: 1pt, y: 0.5pt), t) } else { t }
       }
+      // The axis label paints a background only when something would otherwise
+      // show through it: a grid line, or a curve. Painting it unconditionally
+      // is invisible on a white page but leaves a white rectangle on any other
+      // background (issue #10). `bg: none` in the style turns it off outright.
+      let grid-on = show-grid == true or show-grid in ("major", "minor", "both")
       let axis-label-text(label, at: none) = {
         let t = apply-font(text(size: s.labels.size, fill: s.labels.fill)[#label])
         let bg = s.labels.at("bg", default: white)
-        // Coarse box around the label position, wide enough for any anchor.
-        let over-area = if at == none { false } else {
+        // Box around the label position, wide enough for any anchor. It is
+        // the label's own footprint — an axis label is one or two glyphs — not
+        // the generous 1 cm x 0.7 cm rectangle used before, which reached into
+        // the gridded area from well outside it.
+        let box-at = if at == none { none } else {
           let (px, py) = at
-          label-over-area((px - 0.5, py - 0.35, px + 0.5, py + 0.35))
+          let w = 1.5 * est-char-w
+          let h = 0.8 * est-char-h
+          (px - w, py - h, px + w, py + h)
         }
-        if bg != none and not over-area { box(fill: bg, inset: 0.5pt, t) } else { t }
+        // The area check keeps the older, more generous footprint: a label
+        // sitting near a filled area must not punch a hole in it.
+        let area-box = if at == none { none } else {
+          let (px, py) = at
+          (px - 0.5, py - 0.35, px + 0.5, py + 0.35)
+        }
+        let over-area = if area-box == none { false } else { label-over-area(area-box) }
+        // Something is behind the label when an actual grid line runs through
+        // its box, or a curve does. An axis label parked past the end of an
+        // axis usually has neither, and then the background is pure loss.
+        let backdrop = if box-at == none { true } else {
+          let (bx1, by1, bx2, by2) = box-at
+          let in-grid-y = by2 > clip-y1 and by1 < clip-y2
+          let in-grid-x = bx2 > clip-x1 and bx1 < clip-x2
+          let vline-behind = grid-on and in-grid-y and x-ticks.ticks.any(t => {
+            let (tx, _) = to-canvas(t, 0)
+            tx >= bx1 and tx <= bx2
+          })
+          let hline-behind = grid-on and in-grid-x and y-ticks.ticks.any(t => {
+            let (_, ty) = to-canvas(0, t)
+            ty >= by1 and ty <= by2
+          })
+          // Minor grid lines subdivide every step, so any box sitting inside
+          // the gridded rectangle has one behind it.
+          let minor-on = show-grid == "minor" or show-grid == "both" or show-grid == true
+          let minor-behind = minor-on and in-grid-x and in-grid-y
+          // Tick marks count too: an axis label parked at the end of an axis
+          // often sits right on one, and the background is what keeps the two
+          // from colliding.
+          let xtick-behind = x-ticks.ticks.any(t => {
+            let (tx, ty) = to-canvas(t, x-axis-y)
+            tx >= bx1 and tx <= bx2 and ty + tick-len >= by1 and ty - tick-len <= by2
+          })
+          let ytick-behind = y-ticks.ticks.any(t => {
+            let (tx, ty) = to-canvas(y-axis-x, t)
+            ty >= by1 and ty <= by2 and tx + tick-len >= bx1 and tx - tick-len <= bx2
+          })
+          (vline-behind or hline-behind or minor-behind or xtick-behind or ytick-behind
+            or fn-obstacle-segs.any(((p1, p2)) => seg-hits-box(p1, p2, box-at)))
+        }
+        // The box is always there — only its fill is conditional — so dropping
+        // the background never nudges the glyph by the inset.
+        let paint = bg != none and backdrop and not over-area
+        box(fill: if paint { bg } else { none }, inset: 0.5pt, t)
       }
 
       // Estimated boxes of the drawn x tick labels (and origin label), used to
@@ -1487,7 +1631,7 @@
       // Origin label
       if show-origin and not origin-hidden and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001 {
         let (ox, oy) = to-canvas(0, 0)
-        let (dx, dy) = s.origin.label-offset
+        let (dx, dy) = (origin-dx, origin-dy)
         let label-pos = (ox + dx, oy + dy)
         if s.origin.leader {
           let dist = calc.sqrt(dx * dx + dy * dy)
@@ -1502,7 +1646,7 @@
           }
         }
         content(label-pos, tick-text([0], crossed: label-crossed(origin-label-box())),
-                anchor: s.origin.label-anchor)
+                anchor: origin-anchor)
       }
 
       // Axis labels.
@@ -1602,7 +1746,9 @@
           }
         }
 
-        // Draw clipped line segments between consecutive valid points
+        // Clip the segments between consecutive valid points, then draw each
+        // uninterrupted run as one polyline so dashed strokes stay dashed.
+        let segs = ()
         for j in range(all-points.len() - 1) {
           let pt1 = all-points.at(j)
           let pt2 = all-points.at(j + 1)
@@ -1610,11 +1756,11 @@
             let (x1, y1, _) = pt1
             let (x2, y2, _) = pt2
             let clipped = clip-segment((x1, y1), (x2, y2), clip-x1, clip-y1, clip-x2, clip-y2)
-            if clipped != none {
-              let (p1, p2) = clipped
-              line(p1, p2, stroke: stroke-style)
-            }
+            if clipped != none { segs.push(clipped) }
           }
+        }
+        for run in merge-segment-runs(segs) {
+          line(..run, stroke: stroke-style)
         }
 
         if label != none {
@@ -1951,16 +2097,17 @@
             all-par-pts.push(none)
           }
         }
+        let par-segs = ()
         for j in range(all-par-pts.len() - 1) {
           let pt1 = all-par-pts.at(j)
           let pt2 = all-par-pts.at(j + 1)
           if pt1 != none and pt2 != none {
             let clipped = clip-segment(pt1, pt2, clip-x1, clip-y1, clip-x2, clip-y2)
-            if clipped != none {
-              let (p1, p2) = clipped
-              line(p1, p2, stroke: stroke-style)
-            }
+            if clipped != none { par-segs.push(clipped) }
           }
+        }
+        for run in merge-segment-runs(par-segs) {
+          line(..run, stroke: stroke-style)
         }
 
       // ── Fill area enclosed by parametric closed curve ────────────────────

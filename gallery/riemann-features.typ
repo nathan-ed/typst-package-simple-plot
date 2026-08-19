@@ -1,7 +1,7 @@
 //
 // riemann-features.typ — Gallery showcasing all riemann-sum annotation features
 //
-#import "@preview/simple-plot:1.0.1": plot, riemann-sum
+#import "@preview/simple-plot:1.1.0": plot, riemann-sum
 
 #set page(margin: 1.5cm, width: 21cm)
 #set text(font: "New Computer Modern", size: 10pt)

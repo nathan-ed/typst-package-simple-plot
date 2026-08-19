@@ -48,7 +48,7 @@ Click on an image to see the source code.
 ## Quick Start
 
 ```typst
-#import "@preview/simple-plot:1.0.1": plot
+#import "@preview/simple-plot:1.1.0": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -65,7 +65,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Plotting Functions
 
 ```typst
-#import "@preview/simple-plot:1.0.1": plot
+#import "@preview/simple-plot:1.1.0": plot
 
 // Single function
 #plot(
@@ -87,7 +87,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Scatter Plots
 
 ```typst
-#import "@preview/simple-plot:1.0.1": plot, data
+#import "@preview/simple-plot:1.1.0": plot, data
 
 #plot(
   xmin: 0, xmax: 10,
@@ -104,7 +104,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Line Plots with Markers
 
 ```typst
-#import "@preview/simple-plot:1.0.1": plot, line-plot
+#import "@preview/simple-plot:1.1.0": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -167,7 +167,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 `plot-rational` is a thin wrapper around `plot` with defaults suited to rational-function exercises: centered axes, a visible grid, and one main function curve. Extra positional arguments are forwarded as additional series, so asymptotes and points can be added normally.
 
 ```typst
-#import "@preview/simple-plot:1.0.1": plot-rational, hline
+#import "@preview/simple-plot:1.1.0": plot-rational, hline
 
 #plot-rational(
   x => (x + 1) / (x - 2),
@@ -183,7 +183,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 `limit-schema` draws compact schematic behavior near a point `a`. Use finite numbers for one-sided limits, `"+oo"` / `"-oo"` for vertical asymptotic behavior, and `val` for the defined value at the point. `schema-lim` is available as an alias.
 
 ```typst
-#import "@preview/simple-plot:1.0.1": limit-schema
+#import "@preview/simple-plot:1.1.0": limit-schema
 
 #limit-schema(a: 1, left: 4, right: 4)              // removable hole
 #limit-schema(a: 2, left: "+oo", right: "-oo")      // vertical asymptote
@@ -217,6 +217,9 @@ Control the placement of function labels using `label-pos` and `label-side`:
 | `origin-leader-end-gap` | float | 0.025 | Gap before the label anchor (cm) |
 | `tick-label-size` | length | 0.65em | Tick label font size |
 | `axis-label-size` | length | 0.8em | Axis label (x/y) font size |
+| `samples` | int | 100 | Points evaluated per curve. Raise it for rapidly oscillating functions, lower it to speed up a heavy document. A single curve can override it with its own `samples:` key |
+| `label-bg` | color/none | white | Background painted behind the axis labels where a grid line, a tick mark or a curve runs behind them. `none` turns it off — what you want on a coloured page |
+| `tick-label-bg` | color/none | white | Same, for tick labels (painted only where a curve crosses them) |
 | `unit-label-only` | bool | false | Show only "1" on axes for minimal style |
 | `show-end-ticks` | bool | true | Keep the tick/label at `xmax`/`ymax` when it lands on a tick (e.g. show "5"), pushing the axis slightly past it so the arrow clears the label |
 | `font` | str/array | document font | Font applied to all generated text (tick labels, axis labels, origin, annotations) |
@@ -270,7 +273,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Riemann Sums
 
 ```typst
-#import "@preview/simple-plot:1.0.1": plot, riemann-sum
+#import "@preview/simple-plot:1.1.0": plot, riemann-sum
 
 #plot(
   xmin: 0, xmax: 3, ymin: 0, ymax: 5,
@@ -322,7 +325,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Volume of Revolution
 
 ```typst
-#import "@preview/simple-plot:1.0.1": volume-of-revolution
+#import "@preview/simple-plot:1.1.0": volume-of-revolution
 
 #volume-of-revolution(
   x => calc.sqrt(x),
@@ -439,7 +442,7 @@ drawn.
 ## Setting Global Defaults
 
 ```typst
-#import "@preview/simple-plot:1.0.1": set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:1.1.0": set-plot-defaults, reset-plot-defaults
 
 #set-plot-defaults(width: 6, height: 4, show-grid: "major")
 
@@ -471,6 +474,18 @@ drawn.
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [1.1.0] - 2026-08-19
+
+#### Fixed
+- **Dashed and dotted strokes rendered as solid lines** ([#11](https://github.com/nathan-ed/typst-package-simple-plot/issues/11)) — a curve was drawn as one `line()` per sample, so the dash pattern restarted every few tenths of a millimetre and never reached its first gap. The narrower the plot, the more solid it looked, which is why widening it seemed to "fix" it. Contiguous samples are now drawn as a single polyline, for `fn` and for parametric curves
+- **A curve through the origin took the "0" with it** ([#9](https://github.com/nathan-ed/typst-package-simple-plot/issues/9)) — the origin label is dropped when a curve crosses it, which for `y = x`, `y = x²` or `sin` meant no zero at all. The label now tries the other three corners of the origin and only disappears if all four are crossed. A placement set through `origin-label-offset` / `origin-label-anchor` is left alone
+- **Empty custom tick labels still opened gaps in the grid** — `xtick-labels: ("", "", "1", "")`, the usual way to keep a single label, broke the grid lines at every blanked tick. Gaps are now computed from the labels actually drawn, and their width from the custom text rather than from the number it replaces
+- **The axis labels punched a white rectangle into coloured backgrounds** ([#10](https://github.com/nathan-ed/typst-package-simple-plot/issues/10)) — the background behind `x` and `y` was painted unconditionally. It is now painted only where something would otherwise show through: a grid line, a tick mark or a curve. On a white page the result is unchanged; on any other background the rectangle is gone where it served no purpose. It also no longer punches a hole in an area fill sitting behind the label
+
+#### Added
+- **`samples` on `plot`** ([#7](https://github.com/nathan-ed/typst-package-simple-plot/issues/7)) — the sampling rate for every curve of a plot, where before it could only be set curve by curve. Raise it for rapidly oscillating functions, lower it to speed up a heavy document
+- **`label-bg` and `tick-label-bg` on `plot`** — the colour painted behind axis and tick labels, or `none`. They were reachable only through the `style` dictionary
 
 ### [1.0.1] - 2026-08-08
 
