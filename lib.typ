@@ -703,6 +703,8 @@
   // The fallback is read via func-spec.at("samples", default: s.plot.samples)
   // in the main rendering loop and the zoom-inset re-rendering path.
   if samples != auto {
+    assert(type(samples) == int and samples >= 2,
+      message: "plot: samples must be an integer >= 2, got " + repr(samples))
     s.plot.samples = samples
   }
 

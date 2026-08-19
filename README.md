@@ -484,7 +484,7 @@ MIT License — see LICENSE file for details.
 - **The axis labels punched a white rectangle into coloured backgrounds** ([#10](https://github.com/nathan-ed/typst-package-simple-plot/issues/10)) — the background behind `x` and `y` was painted unconditionally. It is now painted only where something would otherwise show through: a grid line, a tick mark or a curve. On a white page the result is unchanged; on any other background the rectangle is gone where it served no purpose. It also no longer punches a hole in an area fill sitting behind the label
 
 #### Added
-- **`samples` on `plot`** ([#7](https://github.com/nathan-ed/typst-package-simple-plot/issues/7)) — the sampling rate for every curve of a plot, where before it could only be set curve by curve. Raise it for rapidly oscillating functions, lower it to speed up a heavy document
+- **`samples` on `plot`** — the sampling rate for every curve of a plot, where before it could only be set curve by curve. Raise it for rapidly oscillating functions, lower it to speed up a heavy document. Also accepted by `set-plot-defaults`. Contributed by [@FramHerel](https://github.com/FramHerel) in [#8](https://github.com/nathan-ed/typst-package-simple-plot/pull/8), closing [#7](https://github.com/nathan-ed/typst-package-simple-plot/issues/7)
 - **`label-bg` and `tick-label-bg` on `plot`** — the colour painted behind axis and tick labels, or `none`. They were reachable only through the `style` dictionary
 
 ### [1.0.1] - 2026-08-08
