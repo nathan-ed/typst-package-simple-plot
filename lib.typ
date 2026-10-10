@@ -3485,6 +3485,53 @@
 )
 
 // ============================================================================
+// TANGENT LINES
+// ============================================================================
+// A tangent segment returned as a plain `points:` series spec, like `scatter`
+// or `line-plot`, so it is drawn, zoomed and labelled by the existing
+// renderer with no new series key.
+
+/// Tangent line at a point: `y = slope * (x - x0) + y0`, drawn on
+/// `[x0 - left, x0 + right]`. `left: 0` or `right: 0` gives a half-tangent.
+///
+/// Example:
+/// ```typst
+/// #plot(xmin: -1, xmax: 3, ymin: -1, ymax: 4,
+///   (fn: x => x * x, stroke: blue + 1.2pt),
+///   tangent-line(1, 1, 2, left: 0.8, right: 0.8, dashed: true),
+/// )
+/// ```
+#let tangent-line(
+  x0,
+  y0,
+  slope,
+  left: 0.5,
+  right: 0.5,
+  stroke: luma(100) + 0.6pt,
+  dashed: false,
+  label: none,
+  label-pos: 0.8,
+  label-anchor: "south-west",
+) = {
+  // Normalize: a bare colour (`red`) has `auto` paint/thickness, which the
+  // renderer cannot scale, so fall back to the default's values.
+  let s = std.stroke(stroke)
+  let s = std.stroke(
+    paint: if s.paint == auto { luma(100) } else { s.paint },
+    thickness: if s.thickness == auto { 0.6pt } else { s.thickness },
+    dash: if dashed { "dashed" } else { s.dash },
+  )
+  (
+    points: ((x0 - left, y0 - slope * left), (x0 + right, y0 + slope * right)),
+    connect: true,
+    stroke: s,
+    label: label,
+    label-pos: label-pos,
+    label-anchor: label-anchor,
+  )
+}
+
+// ============================================================================
 // SOLID OF REVOLUTION ILLUSTRATION
 // ============================================================================
 

@@ -190,6 +190,29 @@ Control the placement of function labels using `label-pos` and `label-side`:
 #limit-schema(a: 0, left: -1, right: 1, val: 0)     // jump with defined value
 ```
 
+### Tangent Lines
+
+`tangent-line(x0, y0, slope)` draws the tangent `y = slope · (x − x0) + y0` on `[x0 − left, x0 + right]`. Use `left: 0` or `right: 0` for a half-tangent (e.g. at an endpoint or at a corner).
+
+```typst
+#import "@preview/simple-plot:1.1.0": plot, tangent-line
+
+#plot(
+  xmin: -1, xmax: 3, ymin: -1, ymax: 4,
+  (fn: x => x * x, stroke: blue + 1.2pt),
+  tangent-line(1, 1, 2, left: 0.8, right: 0.8, dashed: true),
+  tangent-line(0, 0, 0, left: 0, right: 0.7, stroke: red + 0.8pt),
+)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `x0`, `y0`, `slope` | — | point of tangency and slope |
+| `left`, `right` | `0.5`, `0.5` | horizontal extent on each side of `x0` (data units) |
+| `stroke` | `luma(100) + 0.6pt` | line stroke |
+| `dashed` | `false` | dashed version of `stroke` |
+| `label`, `label-pos`, `label-anchor` | `none`, `0.8`, `"south-west"` | as for other series |
+
 ## Parameters Reference
 
 ### Plot Parameters
@@ -474,6 +497,11 @@ drawn.
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [Unreleased]
+
+#### Added
+- **`tangent-line`** — the tangent `y = slope · (x − x0) + y0` on `[x0 − left, x0 + right]`, with `left: 0` / `right: 0` for half-tangents and a `dashed` switch. Returns an ordinary point series. Contributed by [@amjmeyer](https://github.com/amjmeyer), following [#13](https://github.com/nathan-ed/typst-package-simple-plot/issues/13)
 
 ### [1.1.0] - 2026-08-19
 
