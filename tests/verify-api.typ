@@ -1,4 +1,4 @@
-#import "../lib.typ": plot, plot-fn, fill-area, area-between, riemann-sum, func-plot, zoom, volume-of-revolution, scatter, data
+#import "../lib.typ": plot, plot-fn, fill-area, area-between, riemann-sum, func-plot, zoom, volume-of-revolution, scatter, data, tangent-line
 
 #set page(margin: 1cm, width: 21cm, height: auto)
 #let f(x) = calc.sin(x)
@@ -115,4 +115,14 @@ Explicit legacy (data units) and length forms still work:
 #plot(xmin: -2, xmax: 2, ymin: -2, ymax: 2, width: 3.5, height: 3,
   axis-x-extend: (0pt, 8mm), axis-y-extend: (0pt, 8mm),
   (fn: x => x,),
+)
+
+= 10. tangent-line
+
+Tangent and half-tangent on y = x², plus a dashed one and a plain colour
+stroke (converted internally to a stroke):
+#plot(xmin: -1, xmax: 3, ymin: -1, ymax: 4, width: 8, height: 4,
+  (fn: x => x * x, stroke: blue + 1.2pt),
+  tangent-line(1, 1, 2, left: 0.8, right: 0.8, dashed: true, label: $T_1$),
+  tangent-line(0, 0, 0, left: 0, right: 0.7, stroke: red),
 )
