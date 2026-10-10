@@ -1,4 +1,4 @@
-#import "../lib.typ": plot, plot-fn, fill-area, area-between, riemann-sum, func-plot, zoom, volume-of-revolution, scatter, data
+#import "../lib.typ": plot, plot-fn, fill-area, area-between, riemann-sum, func-plot, zoom, volume-of-revolution, scatter, data, hermite-spline
 
 #set page(margin: 1cm, width: 21cm, height: auto)
 #let f(x) = calc.sin(x)
@@ -115,4 +115,22 @@ Explicit legacy (data units) and length forms still work:
 #plot(xmin: -2, xmax: 2, ymin: -2, ymax: 2, width: 3.5, height: 3,
   axis-x-extend: (0pt, 8mm), axis-y-extend: (0pt, 8mm),
   (fn: x => x,),
+)
+
+= 10. hermite-spline
+
+Correctness: with exact derivatives taken from sin/cos, the spline should be
+visually indistinguishable from the true curve (thin blue over thick red):
+#let xs = (0, calc.pi / 2, calc.pi, 3 * calc.pi / 2, 2 * calc.pi)
+#plot(xmin: -0.3, xmax: 2 * calc.pi + 0.3, ymin: -1.4, ymax: 1.4, width: 8, height: 3.5,
+  (fn: x => calc.sin(x), stroke: red + 2.2pt, label: $sin(x)$),
+  hermite-spline(xs.map(x => (x, calc.sin(x), calc.cos(x))), stroke: blue + 0.9pt, label: [Hermite]),
+)
+
+zoom() on a hermite-spline curve (the "reuse points" design gets zoom for free):
+#let pts = ((0, 0), (1, 3), (2, 1), (3, 2), (4, 0.5), (5, 3))
+#plot(xmin: -0.3, xmax: 5.3, ymin: -0.3, ymax: 3.5, width: 8, height: 4,
+  hermite-spline(pts.map(p => (p.at(0), p.at(1), 0.0)), stroke: blue + 1.2pt),
+  scatter(pts, mark: "o", mark-fill: white, mark-stroke: black + 1pt),
+  zoom(center: (3, 2), size: 1.4, magnification: 3, at: (1, 3)),
 )

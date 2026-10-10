@@ -3485,6 +3485,82 @@
 )
 
 // ============================================================================
+// HERMITE SPLINE CURVES
+// ============================================================================
+// Builds a smooth curve through support points, with a prescribed derivative
+// at each point, and hands back a plain `points:` series spec (the same shape
+// `scatter`/`line-plot` produce). It therefore gets rendering, `zoom`,
+// clipping-by-filter and labels for free from the existing `"points" in fs`
+// branch: no new series key, no change to the renderer. Trade-off: like
+// `scatter`/`line-plot`, a curve leaving the plot window is filtered rather
+// than edge-clipped.
+//
+// Support points must have strictly increasing x (curves y = f(x), not
+// parametric loops; see `parametric()` for those).
+
+// Cubic Hermite basis (h00, h10, h01, h11) at local parameter t in [0, 1].
+#let _hermite-basis(t) = {
+  let t2 = t * t
+  let t3 = t2 * t
+  (2 * t3 - 3 * t2 + 1, t3 - 2 * t2 + t, -2 * t3 + 3 * t2, t3 - t2)
+}
+
+// Sample one Hermite segment from (x0, y0, slope m0) to (x1, y1, slope m1).
+// Slopes are in real dy/dx units; the basis functions expect them scaled by
+// the segment width since t is normalized to [0, 1].
+#let _hermite-segment-points(x0, y0, m0, x1, y1, m1, samples) = {
+  let h = x1 - x0
+  range(samples + 1).map(i => {
+    let t = i / samples
+    let (h00, h10, h01, h11) = _hermite-basis(t)
+    (x0 + t * h, h00 * y0 + h10 * h * m0 + h01 * y1 + h11 * h * m1)
+  })
+}
+
+/// A smooth curve through support points via a cubic Hermite spline, with an
+/// explicit derivative supplied at each point.
+///
+/// `points`: array of `(x, y, dy/dx)`, strictly increasing x.
+///
+/// Example:
+/// ```typst
+/// #plot(xmin: -0.5, xmax: 6.5, ymin: -1.5, ymax: 1.5,
+///   hermite-spline(((0, 0, 1), (calc.pi, 0, -1), (2 * calc.pi, 0, 1))),
+/// )
+/// ```
+#let hermite-spline(
+  points,
+  stroke: blue + 1.2pt,
+  samples: 24,
+  label: none,
+  label-pos: 0.8,
+  label-anchor: "south-west",
+) = {
+  assert(points.len() >= 2, message: "hermite-spline: need at least 2 points")
+  for i in range(points.len() - 1) {
+    assert(
+      points.at(i).at(0) < points.at(i + 1).at(0),
+      message: "hermite-spline: x values must be strictly increasing",
+    )
+  }
+  let sampled = ()
+  for i in range(points.len() - 1) {
+    let (x0, y0, m0) = points.at(i)
+    let (x1, y1, m1) = points.at(i + 1)
+    let seg = _hermite-segment-points(x0, y0, m0, x1, y1, m1, samples)
+    sampled += if i == 0 { seg } else { seg.slice(1) }
+  }
+  (
+    points: sampled,
+    connect: true,
+    stroke: stroke,
+    label: label,
+    label-pos: label-pos,
+    label-anchor: label-anchor,
+  )
+}
+
+// ============================================================================
 // SOLID OF REVOLUTION ILLUSTRATION
 // ============================================================================
 
