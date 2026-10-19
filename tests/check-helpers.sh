@@ -10,7 +10,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 status=0
 
-for f in tests/hermite-spline.typ; do
+for f in tests/hermite-spline.typ tests/tangent-line.typ; do
   if typst compile "$f" "$tmp/out.pdf" --root . 2>"$tmp/err"; then
     echo "ok    $f"
   else
@@ -37,6 +37,9 @@ expect_error 'hermite-spline(((0, 0), (1, 1)))' "each point must be (x, y, dy/dx
 expect_error 'hermite-spline(((0, 0, 1), (0, 1, 0)))' "x values must be strictly increasing, got 0 then 0"
 expect_error 'hermite-spline(((1, 0, 1), (0, 1, 0)))' "x values must be strictly increasing, got 1 then 0"
 expect_error 'hermite-spline(((0, 0, 1), (1, 1, 0)), samples: 0)' "samples must be a positive integer"
+expect_error 'tangent-line(1, 1, 2, left: -0.5)' "left and right must be >= 0, got -0.5 and 0.5"
+expect_error 'tangent-line(1, 1, 2, left: 0, right: 0)' "left and right cannot both be 0"
+expect_error 'tangent-line(1, 1, "2")' "slope must be a number, got \"2\""
 
 # Pixel check: the spline rises above ymax between x = 1.3 and x = 2.4.
 # Cut at the edge, it leaves only steep strokes in the top band of the plot;

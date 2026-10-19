@@ -213,6 +213,29 @@ Control the placement of function labels using `label-pos` and `label-side`:
 | `samples` | `24` | samples per segment between two support points |
 | `label`, `label-pos`, `label-anchor` | `none`, `0.8`, `auto` | as for function series (`auto` = automatic placement) |
 
+### Tangent Lines
+
+*Unreleased: available from the next version.* `tangent-line(x0, y0, slope)` draws the tangent `y = slope · (x − x0) + y0` on `[x0 − left, x0 + right]`. Use `left: 0` or `right: 0` for a half-tangent (at an endpoint of the domain, or at a corner). A tangent longer than the window is cut at the plot edges.
+
+```typst
+#import "@preview/simple-plot:1.1.0": plot, tangent-line
+
+#plot(
+  xmin: -1, xmax: 3, ymin: -1, ymax: 4,
+  (fn: x => x * x, stroke: blue + 1.2pt),
+  tangent-line(1, 1, 2, left: 0.8, right: 0.8, dashed: true),
+  tangent-line(0, 0, 0, left: 0, right: 0.7, stroke: red),
+)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `x0`, `y0`, `slope` | — | point of tangency and slope |
+| `left`, `right` | `0.5`, `0.5` | horizontal extent on each side of `x0` (data units, `>= 0`) |
+| `stroke` | `luma(100) + 0.6pt` | line stroke; a bare colour or thickness is completed from the default |
+| `dashed` | `false` | `true` for a dashed line, or any dash pattern (`"dotted"`, …) |
+| `label`, `label-pos`, `label-anchor` | `none`, `0.8`, `auto` | as for function series |
+
 ## Parameters Reference
 
 ### Plot Parameters
@@ -502,6 +525,7 @@ MIT License — see LICENSE file for details.
 
 #### Added
 - **`hermite-spline`** — a smooth curve through support points `(x, y, dy/dx)` by cubic Hermite interpolation, for "sketch the curve from its values and derivatives" exercises. It is a function series on `[first x, last x]`, so it is clipped at the plot edges, redrawn by `zoom` and labelled automatically. Contributed by [@amjmeyer](https://github.com/amjmeyer) in [#15](https://github.com/nathan-ed/typst-package-simple-plot/pull/15), following [#13](https://github.com/nathan-ed/typst-package-simple-plot/issues/13)
+- **`tangent-line`** — the tangent `y = slope · (x − x0) + y0` on `[x0 − left, x0 + right]`, with `left: 0` / `right: 0` for half-tangents and a `dashed` switch. Cut at the plot edges, redrawn by `zoom`. Contributed by [@amjmeyer](https://github.com/amjmeyer) in [#16](https://github.com/nathan-ed/typst-package-simple-plot/pull/16), following [#13](https://github.com/nathan-ed/typst-package-simple-plot/issues/13)
 
 ### [1.1.0] - 2026-08-19
 

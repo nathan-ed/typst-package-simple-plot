@@ -3571,6 +3571,73 @@
 }
 
 // ============================================================================
+// TANGENT LINES
+// ============================================================================
+// Like hermite-spline, a tangent is a function series on a bounded domain,
+// so it is clipped at the plot edges, redrawn by `zoom()` and labelled by
+// the automatic placement.
+
+/// Tangent line at a point: `y = slope * (x - x0) + y0`, drawn on
+/// `[x0 - left, x0 + right]`. `left: 0` or `right: 0` gives a half-tangent,
+/// e.g. at an endpoint of the domain or at a corner point.
+///
+/// - left, right: horizontal extent on each side of x0, in data units
+/// - stroke: a stroke, or a bare colour or thickness completed from the default
+/// - dashed: `true` for a dashed line, or any dash pattern (`"dotted"`, ...)
+///
+/// Example:
+/// ```typst
+/// #plot(xmin: -1, xmax: 3, ymin: -1, ymax: 4,
+///   (fn: x => x * x, stroke: blue + 1.2pt),
+///   tangent-line(1, 1, 2, left: 0.8, right: 0.8, dashed: true),
+///   tangent-line(0, 0, 0, left: 0, right: 0.7, stroke: red),
+/// )
+/// ```
+#let tangent-line(
+  x0,
+  y0,
+  slope,
+  left: 0.5,
+  right: 0.5,
+  stroke: luma(100) + 0.6pt,
+  dashed: false,
+  label: none,
+  label-pos: 0.8,
+  label-anchor: auto,
+) = {
+  for (name, v) in (("x0", x0), ("y0", y0), ("slope", slope), ("left", left), ("right", right)) {
+    assert(type(v) in (int, float),
+      message: "tangent-line: " + name + " must be a number, got " + repr(v))
+  }
+  assert(left >= 0 and right >= 0,
+    message: "tangent-line: left and right must be >= 0, got " + repr(left) + " and " + repr(right))
+  assert(left + right > 0,
+    message: "tangent-line: left and right cannot both be 0")
+  // A bare colour or thickness leaves the other fields `auto`: fill them
+  // from the default so the dash can be applied on a complete stroke.
+  let s = std.stroke(stroke)
+  let dash = if dashed == true { "dashed" } else if dashed == false { s.dash } else { dashed }
+  let s = std.stroke(
+    paint: if s.paint == auto { luma(100) } else { s.paint },
+    thickness: if s.thickness == auto { 0.6pt } else { s.thickness },
+    cap: s.cap,
+    join: s.join,
+    dash: dash,
+    miter-limit: s.miter-limit,
+  )
+  (
+    fn: x => y0 + slope * (x - x0),
+    domain: (x0 - left, x0 + right),
+    // A straight line: the two ends are exact, two samples keep one polyline.
+    samples: 2,
+    stroke: s,
+    label: label,
+    label-pos: label-pos,
+    label-anchor: label-anchor,
+  )
+}
+
+// ============================================================================
 // SOLID OF REVOLUTION ILLUSTRATION
 // ============================================================================
 
