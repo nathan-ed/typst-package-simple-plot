@@ -190,6 +190,29 @@ Control the placement of function labels using `label-pos` and `label-side`:
 #limit-schema(a: 0, left: -1, right: 1, val: 0)     // jump with defined value
 ```
 
+### Hermite Splines
+
+*Unreleased: available from the next version.* `hermite-spline` draws a smooth curve through support points with a prescribed derivative at each one (cubic Hermite interpolation). This is the usual "sketch a curve knowing f(a) and f'(a) at a few points" exercise, without having to find a formula. Each point is `(x, y, dy/dx)`, with strictly increasing `x`. The result is an ordinary function series on `[first x, last x]`, so it is clipped at the plot edges, redrawn by `zoom` and labelled like any other curve.
+
+```typst
+#import "@preview/simple-plot:1.1.0": plot, hermite-spline, scatter
+
+#let pts = ((-2, 1, 0), (0, -1, 0), (1, 0, 2), (3, 2, 0))
+#plot(
+  xmin: -3, xmax: 4, ymin: -2, ymax: 3,
+  show-grid: "major",
+  hermite-spline(pts, label: $C_f$),
+  scatter(pts.map(p => (p.at(0), p.at(1))), mark: "*"),
+)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `points` | — | array of `(x, y, dy/dx)`, at least 2, strictly increasing `x` |
+| `stroke` | `blue + 1.2pt` | curve stroke |
+| `samples` | `24` | samples per segment between two support points |
+| `label`, `label-pos`, `label-anchor` | `none`, `0.8`, `auto` | as for function series (`auto` = automatic placement) |
+
 ## Parameters Reference
 
 ### Plot Parameters
@@ -474,6 +497,11 @@ drawn.
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [Unreleased]
+
+#### Added
+- **`hermite-spline`** — a smooth curve through support points `(x, y, dy/dx)` by cubic Hermite interpolation, for "sketch the curve from its values and derivatives" exercises. It is a function series on `[first x, last x]`, so it is clipped at the plot edges, redrawn by `zoom` and labelled automatically. Contributed by [@amjmeyer](https://github.com/amjmeyer) in [#15](https://github.com/nathan-ed/typst-package-simple-plot/pull/15), following [#13](https://github.com/nathan-ed/typst-package-simple-plot/issues/13)
 
 ### [1.1.0] - 2026-08-19
 
