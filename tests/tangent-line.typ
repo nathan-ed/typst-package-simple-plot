@@ -27,6 +27,7 @@
 #let full = st(stroke: (paint: blue, thickness: 1pt, cap: "round", join: "bevel"), dashed: true)
 #assert.eq((full.paint, full.thickness, full.cap, full.join), (blue, 1pt, "round", "bevel"))
 #assert.eq(full.dash, stroke(dash: "dashed").dash)
+#assert.eq(st(stroke: none), none)
 
 = tangent-line
 
@@ -52,4 +53,11 @@ Together with `hermite-spline`, the tangents at the support points:
 #plot(xmin: -3, xmax: 4, ymin: -2, ymax: 3, width: 8, height: 4,
   hermite-spline(pts, label: $C_f$),
   ..pts.map(((x, y, m)) => tangent-line(x, y, m, stroke: red + 0.8pt)),
+)
+
+A tangent whose domain lies wholly outside the window draws nothing, and its
+label is not placed either (no floating "T" at the right edge):
+#plot(xmin: 0, xmax: 3, ymin: -1, ymax: 2, width: 6, height: 2.5,
+  tangent-line(5, 1, 0, label: $T$),
+  tangent-line(1, 1, 0, stroke: none, label: $S$),
 )

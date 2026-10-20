@@ -1,5 +1,5 @@
 // Numerical checks for hermite-spline: compiling this file is the test, every
-// check is an assert. tests/check-hermite-tangent.sh also renders it.
+// check is an assert. tests/check-helpers.sh also renders it.
 #import "../lib.typ": plot, hermite-spline, scatter, zoom, _hermite-eval
 
 #set page(margin: 1cm, width: 21cm, height: auto)
@@ -36,8 +36,20 @@
 #assert.eq((spec.fn)(-2.0001), none)
 #assert.eq((spec.fn)(3.0001), none)
 #assert(close((spec.fn)(3.0 + 1e-12), 2.0), message: "end-point rounding absorbed")
-#assert.eq(spec.samples, 24 * 3)
-#assert.eq(hermite-spline(pts, samples: 5).samples, 15)
+// Sampling is sized on the shortest segment (here 1 of a span of 5), so
+// every segment gets at least `samples` samples; evenly spaced knots get
+// exactly `samples` per segment.
+#assert.eq(spec.samples, 24 * 5)
+#assert.eq(hermite-spline(pts, samples: 5).samples, 25)
+#assert.eq(hermite-spline(((0, 0, 0), (1, 1, 0), (2, 0, 0))).samples, 48)
+
+// A short segment between close knots is not skipped: the renderer's even
+// sampling of the domain must hit the spike at x = 0.05.
+#let spike = hermite-spline(((0, 0, 0), (0.05, 2, 0), (0.1, 0, 0), (10, 0, 0)))
+#let (d0, d1) = spike.domain
+#let ys = range(spike.samples + 1).map(i => (spike.fn)(d0 + i * (d1 - d0) / spike.samples))
+#assert(calc.max(..ys.filter(y => y != none)) > 1.9, message: "spike sampled")
+#assert(spike.samples <= 20000)
 
 // Two points, integer and float input mixed.
 #let two = hermite-spline(((0, 0, 1), (2.5, 1, 0)))

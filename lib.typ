@@ -1786,7 +1786,11 @@
           line(..run, stroke: stroke-style)
         }
 
-        if label != none {
+        // No label for a curve whose whole domain lies outside the window:
+        // nothing of it is drawn, so the label would float on its own.
+        let domain-visible = domain == none or (
+          calc.max(float(domain-min), xmin) <= calc.min(float(domain-max), xmax))
+        if label != none and domain-visible {
           let label-pos = func-spec.at("label-pos", default: 1.0)
           let label-side = func-spec.at("label-side", default: none)
           // Clip label position to the data range (xmin/xmax).
@@ -3526,7 +3530,7 @@
 /// f(a) and f'(a)" exercise, without having to find a formula.
 ///
 /// - points: array of `(x, y, dy/dx)`, at least 2, strictly increasing x
-/// - samples: samples per segment between two support points (default 24)
+/// - samples: minimum samples per segment between two support points (default 24)
 ///
 /// Example:
 /// ```typst
@@ -3559,10 +3563,16 @@
   }
   assert(type(samples) == int and samples >= 1,
     message: "hermite-spline: samples must be a positive integer, got " + repr(samples))
+  // The renderer samples the whole domain evenly, so size the step on the
+  // shortest segment: every segment then gets at least `samples` samples,
+  // and a short one between close points is never skipped. The cap keeps
+  // pathological spacing from exploding the sample count.
+  let span = knots.last().at(0) - knots.first().at(0)
+  let shortest = calc.min(..range(knots.len() - 1).map(i => knots.at(i + 1).at(0) - knots.at(i).at(0)))
   (
     fn: x => _hermite-eval(knots, x),
     domain: (knots.first().at(0), knots.last().at(0)),
-    samples: samples * (knots.len() - 1),
+    samples: calc.min(calc.ceil(samples * span / shortest), 20000),
     stroke: stroke,
     label: label,
     label-pos: label-pos,
@@ -3577,12 +3587,15 @@
 // so it is clipped at the plot edges, redrawn by `zoom()` and labelled by
 // the automatic placement.
 
+#let _tangent-default-stroke = luma(100) + 0.6pt
+
 /// Tangent line at a point: `y = slope * (x - x0) + y0`, drawn on
 /// `[x0 - left, x0 + right]`. `left: 0` or `right: 0` gives a half-tangent,
 /// e.g. at an endpoint of the domain or at a corner point.
 ///
 /// - left, right: horizontal extent on each side of x0, in data units
-/// - stroke: a stroke, or a bare colour or thickness completed from the default
+/// - stroke: a stroke, or a bare colour or thickness completed from the
+///   default; `none` draws nothing (the label, if any, is still placed)
 /// - dashed: `true` for a dashed line, or any dash pattern (`"dotted"`, ...)
 ///
 /// Example:
@@ -3599,7 +3612,7 @@
   slope,
   left: 0.5,
   right: 0.5,
-  stroke: luma(100) + 0.6pt,
+  stroke: _tangent-default-stroke,
   dashed: false,
   label: none,
   label-pos: 0.8,
@@ -3615,16 +3628,18 @@
     message: "tangent-line: left and right cannot both be 0")
   // A bare colour or thickness leaves the other fields `auto`: fill them
   // from the default so the dash can be applied on a complete stroke.
-  let s = std.stroke(stroke)
-  let dash = if dashed == true { "dashed" } else if dashed == false { s.dash } else { dashed }
-  let s = std.stroke(
-    paint: if s.paint == auto { luma(100) } else { s.paint },
-    thickness: if s.thickness == auto { 0.6pt } else { s.thickness },
-    cap: s.cap,
-    join: s.join,
-    dash: dash,
-    miter-limit: s.miter-limit,
-  )
+  let s = if stroke == none { none } else {
+    let s = std.stroke(stroke)
+    let d = std.stroke(_tangent-default-stroke)
+    std.stroke(
+      paint: if s.paint == auto { d.paint } else { s.paint },
+      thickness: if s.thickness == auto { d.thickness } else { s.thickness },
+      cap: s.cap,
+      join: s.join,
+      dash: if dashed == true { "dashed" } else if dashed == false { s.dash } else { dashed },
+      miter-limit: s.miter-limit,
+    )
+  }
   (
     fn: x => y0 + slope * (x - x0),
     domain: (x0 - left, x0 + right),
