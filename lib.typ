@@ -1786,7 +1786,11 @@
           line(..run, stroke: stroke-style)
         }
 
-        if label != none {
+        // No label for a curve whose whole domain lies outside the window:
+        // nothing of it is drawn, so the label would float on its own.
+        let domain-visible = domain == none or (
+          calc.max(float(domain-min), xmin) <= calc.min(float(domain-max), xmax))
+        if label != none and domain-visible {
           let label-pos = func-spec.at("label-pos", default: 1.0)
           let label-side = func-spec.at("label-side", default: none)
           // Clip label position to the data range (xmin/xmax).
@@ -3483,6 +3487,170 @@
   hatch: hatch, hatch-spacing: hatch-spacing, hatch-stroke: hatch-stroke,
   samples: samples,
 )
+
+// ============================================================================
+// HERMITE SPLINE CURVES
+// ============================================================================
+// The spline is handed to the renderer as an ordinary function series
+// (`fn:` + `domain:`), so it is clipped exactly at the plot edges (a curve
+// overshooting ymax is cut there, not bridged by a chord), redrawn by
+// `zoom()`, and labelled by the automatic label placement.
+
+// Value at x of the cubic Hermite spline through `knots`, an array of
+// (x, y, dy/dx) with strictly increasing x. Returns none outside the knots,
+// so the curve stops at its first and last support points.
+#let _hermite-eval(knots, x) = {
+  let xa = knots.first().at(0)
+  let xb = knots.last().at(0)
+  // Absorb the rounding of the renderer's `domain-min + i * step` at the ends.
+  let eps = 1e-9 * (xb - xa)
+  if x < xa - eps or x > xb + eps { return none }
+  let x = calc.max(xa, calc.min(x, xb))
+  // Binary search for the segment [knots.at(lo), knots.at(lo + 1)].
+  let lo = 0
+  let hi = knots.len() - 1
+  while hi - lo > 1 {
+    let mid = calc.div-euclid(lo + hi, 2)
+    if knots.at(mid).at(0) <= x { lo = mid } else { hi = mid }
+  }
+  let (x0, y0, m0) = knots.at(lo)
+  let (x1, y1, m1) = knots.at(hi)
+  let h = x1 - x0
+  let t = (x - x0) / h
+  let t2 = t * t
+  let t3 = t2 * t
+  // Basis h00, h10, h01, h11; the slopes are scaled by h because t runs
+  // over [0, 1] while the slopes are given in dy/dx units.
+  ((2 * t3 - 3 * t2 + 1) * y0 + (t3 - 2 * t2 + t) * h * m0
+    + (-2 * t3 + 3 * t2) * y1 + (t3 - t2) * h * m1)
+}
+
+/// Smooth curve through support points with a prescribed derivative at
+/// each one (cubic Hermite interpolation): the "sketch the curve knowing
+/// f(a) and f'(a)" exercise, without having to find a formula.
+///
+/// - points: array of `(x, y, dy/dx)`, at least 2, strictly increasing x
+/// - samples: minimum samples per segment between two support points (default 24)
+///
+/// Example:
+/// ```typst
+/// #let pts = ((-2, 1, 0), (0, -1, 0), (1, 0, 2), (3, 2, 0))
+/// #plot(xmin: -3, xmax: 4, ymin: -2, ymax: 3,
+///   hermite-spline(pts, label: $C_f$),
+///   scatter(pts.map(p => (p.at(0), p.at(1)))),
+/// )
+/// ```
+#let hermite-spline(
+  points,
+  stroke: blue + 1.2pt,
+  samples: 24,
+  label: none,
+  label-pos: 0.8,
+  label-anchor: auto,
+) = {
+  assert(type(points) == array and points.len() >= 2,
+    message: "hermite-spline: need an array of at least 2 points (x, y, dy/dx)")
+  let knots = points.map(p => {
+    assert(type(p) == array and p.len() == 3
+        and p.all(v => type(v) in (int, float)),
+      message: "hermite-spline: each point must be (x, y, dy/dx), got " + repr(p))
+    p.map(float)
+  })
+  for i in range(knots.len() - 1) {
+    assert(knots.at(i).at(0) < knots.at(i + 1).at(0),
+      message: "hermite-spline: x values must be strictly increasing, got "
+        + repr(points.at(i).at(0)) + " then " + repr(points.at(i + 1).at(0)))
+  }
+  assert(type(samples) == int and samples >= 1,
+    message: "hermite-spline: samples must be a positive integer, got " + repr(samples))
+  // The renderer samples the whole domain evenly, so size the step on the
+  // shortest segment: every segment then gets at least `samples` samples,
+  // and a short one between close points is never skipped. The cap keeps
+  // pathological spacing from exploding the sample count.
+  let span = knots.last().at(0) - knots.first().at(0)
+  let shortest = calc.min(..range(knots.len() - 1).map(i => knots.at(i + 1).at(0) - knots.at(i).at(0)))
+  (
+    fn: x => _hermite-eval(knots, x),
+    domain: (knots.first().at(0), knots.last().at(0)),
+    samples: calc.min(calc.ceil(samples * span / shortest), 20000),
+    stroke: stroke,
+    label: label,
+    label-pos: label-pos,
+    label-anchor: label-anchor,
+  )
+}
+
+// ============================================================================
+// TANGENT LINES
+// ============================================================================
+// Like hermite-spline, a tangent is a function series on a bounded domain,
+// so it is clipped at the plot edges, redrawn by `zoom()` and labelled by
+// the automatic placement.
+
+#let _tangent-default-stroke = luma(100) + 0.6pt
+
+/// Tangent line at a point: `y = slope * (x - x0) + y0`, drawn on
+/// `[x0 - left, x0 + right]`. `left: 0` or `right: 0` gives a half-tangent,
+/// e.g. at an endpoint of the domain or at a corner point.
+///
+/// - left, right: horizontal extent on each side of x0, in data units
+/// - stroke: a stroke, or a bare colour or thickness completed from the
+///   default; `none` draws nothing (the label, if any, is still placed)
+/// - dashed: `true` for a dashed line, or any dash pattern (`"dotted"`, ...)
+///
+/// Example:
+/// ```typst
+/// #plot(xmin: -1, xmax: 3, ymin: -1, ymax: 4,
+///   (fn: x => x * x, stroke: blue + 1.2pt),
+///   tangent-line(1, 1, 2, left: 0.8, right: 0.8, dashed: true),
+///   tangent-line(0, 0, 0, left: 0, right: 0.7, stroke: red),
+/// )
+/// ```
+#let tangent-line(
+  x0,
+  y0,
+  slope,
+  left: 0.5,
+  right: 0.5,
+  stroke: _tangent-default-stroke,
+  dashed: false,
+  label: none,
+  label-pos: 0.8,
+  label-anchor: auto,
+) = {
+  for (name, v) in (("x0", x0), ("y0", y0), ("slope", slope), ("left", left), ("right", right)) {
+    assert(type(v) in (int, float),
+      message: "tangent-line: " + name + " must be a number, got " + repr(v))
+  }
+  assert(left >= 0 and right >= 0,
+    message: "tangent-line: left and right must be >= 0, got " + repr(left) + " and " + repr(right))
+  assert(left + right > 0,
+    message: "tangent-line: left and right cannot both be 0")
+  // A bare colour or thickness leaves the other fields `auto`: fill them
+  // from the default so the dash can be applied on a complete stroke.
+  let s = if stroke == none { none } else {
+    let s = std.stroke(stroke)
+    let d = std.stroke(_tangent-default-stroke)
+    std.stroke(
+      paint: if s.paint == auto { d.paint } else { s.paint },
+      thickness: if s.thickness == auto { d.thickness } else { s.thickness },
+      cap: s.cap,
+      join: s.join,
+      dash: if dashed == true { "dashed" } else if dashed == false { s.dash } else { dashed },
+      miter-limit: s.miter-limit,
+    )
+  }
+  (
+    fn: x => y0 + slope * (x - x0),
+    domain: (x0 - left, x0 + right),
+    // A straight line: the two ends are exact, two samples keep one polyline.
+    samples: 2,
+    stroke: s,
+    label: label,
+    label-pos: label-pos,
+    label-anchor: label-anchor,
+  )
+}
 
 // ============================================================================
 // SOLID OF REVOLUTION ILLUSTRATION

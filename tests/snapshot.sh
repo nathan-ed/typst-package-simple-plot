@@ -13,6 +13,7 @@ out=${1:?usage: snapshot.sh <dir>}
 mkdir -p "$out"
 
 for f in gallery/*.typ tests/verify-api.typ tests/stress.typ \
+         tests/hermite-spline.typ tests/tangent-line.typ \
          tests/riemann-regression.typ tests/volume-regression.typ docs/manual.typ; do
   [ -f "$f" ] || continue
   name=$(echo "${f%.typ}" | tr '/' '-')
