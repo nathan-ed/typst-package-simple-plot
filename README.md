@@ -1,6 +1,6 @@
 # simple-plot
 
-[![simple-plot on Typst Universe](https://img.shields.io/badge/Typst_Universe-v._1.1.0-239dad?labelColor=eee)](https://typst.app/universe/package/simple-plot)
+[![simple-plot on Typst Universe](https://img.shields.io/badge/Typst_Universe-v._1.1.1-239dad?labelColor=eee)](https://typst.app/universe/package/simple-plot)
 [![Full package manual as PDF](https://img.shields.io/badge/Manual-pdf-333333?labelColor=eee)](https://github.com/nathan-ed/typst-package-simple-plot/blob/7d0caea8e0a4213de45c2f783f0cb9e769c4c061/docs/manual.pdf)
 [![Distributed under the MIT license](https://img.shields.io/badge/License-MIT-333333?labelColor=eee)](LICENSE)
 
@@ -48,7 +48,7 @@ Click on an image to see the source code.
 ## Quick Start
 
 ```typst
-#import "@preview/simple-plot:1.1.0": plot
+#import "@preview/simple-plot:1.1.1": plot
 
 #plot(
   xmin: -3, xmax: 3,
@@ -65,7 +65,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Plotting Functions
 
 ```typst
-#import "@preview/simple-plot:1.1.0": plot
+#import "@preview/simple-plot:1.1.1": plot
 
 // Single function
 #plot(
@@ -87,7 +87,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Scatter Plots
 
 ```typst
-#import "@preview/simple-plot:1.1.0": plot, data
+#import "@preview/simple-plot:1.1.1": plot, data
 
 #plot(
   xmin: 0, xmax: 10,
@@ -104,7 +104,7 @@ Axis labels default to $x$ and $y$ — no need to set them explicitly.
 ### Line Plots with Markers
 
 ```typst
-#import "@preview/simple-plot:1.1.0": plot, line-plot
+#import "@preview/simple-plot:1.1.1": plot, line-plot
 
 #plot(
   xmin: 0, xmax: 10,
@@ -167,7 +167,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 `plot-rational` is a thin wrapper around `plot` with defaults suited to rational-function exercises: centered axes, a visible grid, and one main function curve. Extra positional arguments are forwarded as additional series, so asymptotes and points can be added normally.
 
 ```typst
-#import "@preview/simple-plot:1.1.0": plot-rational, hline
+#import "@preview/simple-plot:1.1.1": plot-rational, hline
 
 #plot-rational(
   x => (x + 1) / (x - 2),
@@ -183,7 +183,7 @@ Control the placement of function labels using `label-pos` and `label-side`:
 `limit-schema` draws compact schematic behavior near a point `a`. Use finite numbers for one-sided limits, `"+oo"` / `"-oo"` for vertical asymptotic behavior, and `val` for the defined value at the point. `schema-lim` is available as an alias.
 
 ```typst
-#import "@preview/simple-plot:1.1.0": limit-schema
+#import "@preview/simple-plot:1.1.1": limit-schema
 
 #limit-schema(a: 1, left: 4, right: 4)              // removable hole
 #limit-schema(a: 2, left: "+oo", right: "-oo")      // vertical asymptote
@@ -273,7 +273,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Riemann Sums
 
 ```typst
-#import "@preview/simple-plot:1.1.0": plot, riemann-sum
+#import "@preview/simple-plot:1.1.1": plot, riemann-sum
 
 #plot(
   xmin: 0, xmax: 3, ymin: 0, ymax: 5,
@@ -325,7 +325,7 @@ them clear of the tick numbers (which sit below / left of the axis).
 ## Volume of Revolution
 
 ```typst
-#import "@preview/simple-plot:1.1.0": volume-of-revolution
+#import "@preview/simple-plot:1.1.1": volume-of-revolution
 
 #volume-of-revolution(
   x => calc.sqrt(x),
@@ -442,7 +442,7 @@ drawn.
 ## Setting Global Defaults
 
 ```typst
-#import "@preview/simple-plot:1.1.0": set-plot-defaults, reset-plot-defaults
+#import "@preview/simple-plot:1.1.1": set-plot-defaults, reset-plot-defaults
 
 #set-plot-defaults(width: 6, height: 4, show-grid: "major")
 
@@ -474,6 +474,14 @@ drawn.
 MIT License — see LICENSE file for details.
 
 ## Changelog
+
+### [1.1.1] - 2026-11-10
+
+#### Changed
+- **Plots compile faster and hold about half the memory**, with pixel-identical output. On a document of 90 plots, compile time dropped by roughly 40% and peak memory from 547 MB to 263 MB.
+  - **Markers**: all the markers of a series are drawn as one CeTZ element. The marker is built once and copied to each point, where every point used to be a full element with its own coordinate and style resolution, anchors and bounding box. Round markers no longer go through the CeTZ plugin, which was called four times per point, twice over.
+  - **Curves, ticks and grid lines** are assembled directly from their canvas coordinates rather than resolved point by point as general CeTZ coordinates.
+  - **Label placement**: the test that tells whether a curve crosses a tick label ran as tens of thousands of function calls per document; it is now a single loop of comparisons.
 
 ### [1.1.0] - 2026-08-19
 

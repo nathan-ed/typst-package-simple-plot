@@ -466,6 +466,154 @@
   }
 }
 
+// Draws the same marker at every position, as one CeTZ element.
+//
+// A marker drawn on its own is a full CeTZ element: coordinates and style are
+// resolved, anchors are set up and a bounding box is computed (for a circle,
+// through the plugin, once per quarter arc). A series of forty points paid
+// that forty times. Here CeTZ builds the marker once, at the origin, and the
+// result is copied to each position by a plain translation. Only the markers
+// that reach furthest left, right, up and down take part in the bounding box,
+// which is the same box as before.
+//
+// A round marker gets one more treatment. When the canvas renders a path it
+// computes its bounding box again, through the plugin for every curved
+// segment, so a circle would still cost four plugin calls per point. The
+// circle is therefore turned into a ready-made Typst curve, built once with
+// the very coordinates the canvas would have produced, and handed over as
+// content: the canvas only has to place it.
+#let draw-markers(positions, marker-type, size, fill-color, stroke-style) = {
+  let marker = draw-marker((0, 0), marker-type, size, fill-color, stroke-style)
+  if marker == none or positions.len() == 0 { return () }
+  (ctx => {
+    let length = ctx.length
+    let template = cetz.process.many(ctx, marker).drawables.map(drawable => {
+      let curved = drawable.type == "path" and drawable.segments.any(((_, _, segments)) => {
+        segments.any(segment => segment.first() == "c")
+      })
+      if not curved { return drawable }
+      let extent = cetz.path-util.bounds(drawable.segments)
+      let (lx, hx) = (calc.min(..extent.map(pt => pt.at(0))), calc.max(..extent.map(pt => pt.at(0))))
+      let (ly, hy) = (calc.min(..extent.map(pt => pt.at(1))), calc.max(..extent.map(pt => pt.at(1))))
+      let lz = extent.first().at(2)
+      // Same conversion as the canvas: y points down, origin at the top-left
+      // corner of the path's own box
+      let convert((x, y, ..)) = ((x - lx) * length, (hy - y) * length)
+      let vertices = ()
+      for (origin, closed, segments) in drawable.segments {
+        vertices.push(curve.move(convert(origin)))
+        for (kind, ..points) in segments {
+          if kind == "l" {
+            for pt in points { vertices.push(curve.line(convert(pt))) }
+          } else {
+            vertices.push(curve.cubic(..points.map(convert)))
+          }
+        }
+        if closed { vertices.push(curve.close(mode: "straight")) }
+      }
+      let stroke = drawable.stroke
+      if type(stroke) == dictionary and "thickness" in stroke and type(stroke.thickness) != std.length {
+        stroke.thickness *= length
+      }
+      let ready = cetz.drawable.content(
+        ((lx + hx) / 2, (ly + hy) / 2, lz), hx - lx, hy - ly, drawable.segments,
+        curve(stroke: stroke, fill: drawable.fill,
+          fill-rule: drawable.at("fill-rule", default: "non-zero"), ..vertices),
+      )
+      ready.tags = drawable.tags
+      ready
+    })
+    let transform = cetz.matrix.mul4x4-vec3.with(ctx.transform)
+    let (ox, oy, oz) = transform((0.0, 0.0, 0.0))
+    let targets = positions.map(((x, y)) => transform((x, y, 0.0)))
+
+    // The four extreme markers span the box of the whole series
+    let (left, right, low, high) = (0, 0, 0, 0)
+    for (i, (x, y, ..)) in targets.enumerate() {
+      if x < targets.at(left).at(0) { left = i }
+      if x > targets.at(right).at(0) { right = i }
+      if y < targets.at(low).at(1) { low = i }
+      if y > targets.at(high).at(1) { high = i }
+    }
+    let bounding = (left, right, low, high)
+    let no-bounds = cetz.drawable.TAG.no-bounds
+
+    let drawables = ()
+    for (i, (x, y, z)) in targets.enumerate() {
+      let (dx, dy, dz) = (x - ox, y - oy, z - oz)
+      let in-bounds = i in bounding
+      for drawable in template {
+        if drawable.type == "content" {
+          let (px, py, pz) = drawable.pos
+          drawable.pos = (px + dx, py + dy, pz + dz)
+        } else {
+          drawable.segments = drawable.segments.map(((origin, closed, segments)) => (
+            (origin.at(0) + dx, origin.at(1) + dy, origin.at(2) + dz),
+            closed,
+            segments.map(((kind, ..points)) => (
+              kind,
+              ..points.map(pt => (pt.at(0) + dx, pt.at(1) + dy, pt.at(2) + dz)),
+            )),
+          ))
+        }
+        if not in-bounds { drawable.tags.push(no-bounds) }
+        drawables.push(drawable)
+      }
+    }
+    (ctx: ctx, drawables: drawables)
+  },)
+}
+
+// A polyline through points already in canvas coordinates: what CeTZ's `line`
+// draws, without what a curve of a hundred samples has no use for. `line`
+// resolves every point as a general coordinate (a dozen function calls each),
+// then sets up anchors along the path. Here the path is assembled in one loop.
+// A style that asks for marks goes to `line` itself.
+#let polyline(points, close: false, ..style) = {
+  (ctx => {
+    let style = cetz.styles.resolve(ctx.style, merge: style.named(), root: "line")
+    if cetz.mark.check-mark(style.mark) {
+      return cetz.draw.line(..points, close: close, ..style).first()(ctx)
+    }
+    let origin = none
+    let prev = none
+    let segments = ()
+    for pt in points {
+      let pt = (float(pt.at(0)), float(pt.at(1)), float(pt.at(2, default: 0)))
+      if origin == none {
+        origin = pt
+      } else if pt != prev {
+        // (a point repeated in place is no segment, as in CeTZ)
+        segments.push(("l", pt))
+      }
+      prev = pt
+    }
+    if close and prev != origin { segments.push(("l", origin)) }
+    let drawable = (
+      type: "path",
+      segments: ((origin, close, segments),),
+      fill: style.fill,
+      fill-rule: style.fill-rule,
+      stroke: style.stroke,
+      tags: (),
+    )
+    (ctx: ctx, drawables: cetz.drawable.apply-transform(ctx.transform, drawable))
+  },)
+}
+
+// `line` as the plot bodies use it: a straight run of plain numeric points
+// (a tick, a grid line, a rectangle side) goes through `polyline`; anything
+// CeTZ has to interpret (a named element, marks, anchors or relative
+// coordinates) is left to CeTZ's own `line`.
+#let _line(..args) = {
+  let named = args.named()
+  let points = args.pos()
+  let plain = points.len() >= 2 and "name" not in named and "mark" not in named and points.all(pt => {
+    type(pt) == array and pt.len() >= 2 and type(pt.at(0)) in (int, float) and type(pt.at(1)) in (int, float)
+  })
+  if plain { polyline(points, ..named) } else { cetz.draw.line(..args) }
+}
+
 // ============================================================================
 // MAIN PLOT FUNCTION
 // ============================================================================
@@ -785,6 +933,7 @@
     // Save Typst's native `line` before cetz shadows it — needed for pattern() fills
     let native-line = line
     import cetz.draw: *
+    let line = _line
 
     // ── Hatch pattern builder ────────────────────────────────────────────────
     // Returns a Typst fill paint: a solid color or a repeating pattern.
@@ -933,11 +1082,23 @@
     let boxes-overlap(a, b) = {
       a.at(0) < b.at(2) and a.at(2) > b.at(0) and a.at(1) < b.at(3) and a.at(3) > b.at(1)
     }
-    let seg-hits-box(p1, p2, b) = {
+    // Number of segments that cross box `b`, counted up to `limit`. This runs
+    // for every curve segment against every label box, so it is one loop of
+    // plain comparisons: a closure call per segment, or a call to calc.max and
+    // calc.min for the bounding-box rejection, costs far more than the test
+    // itself. Only the segments that survive the rejection are clipped.
+    let segs-hitting-box(segs, b, limit) = {
       let (bx1, by1, bx2, by2) = b
-      if calc.max(p1.at(0), p2.at(0)) < bx1 or calc.min(p1.at(0), p2.at(0)) > bx2 { return false }
-      if calc.max(p1.at(1), p2.at(1)) < by1 or calc.min(p1.at(1), p2.at(1)) > by2 { return false }
-      clip-segment(p1, p2, bx1, by1, bx2, by2) != none
+      let hits = 0
+      for ((x1, y1), (x2, y2)) in segs {
+        if (x1 < bx1 and x2 < bx1) or (x1 > bx2 and x2 > bx2) { continue }
+        if (y1 < by1 and y2 < by1) or (y1 > by2 and y2 > by2) { continue }
+        if clip-segment((x1, y1), (x2, y2), bx1, by1, bx2, by2) != none {
+          hits += 1
+          if hits >= limit { break }
+        }
+      }
+      hits
     }
     let x-tick-label-box(x) = {
       let (cx, cy) = to-canvas(x, x-axis-y)
@@ -1096,7 +1257,7 @@
     if (show-origin and hide-crossed-tick-labels and fn-obstacle-segs.len() > 0
         and origin-label-offset == auto and origin-label-anchor == auto
         and calc.abs(x-axis-y) < 0.0001 and calc.abs(y-axis-x) < 0.0001) {
-      let crossed(box) = fn-obstacle-segs.any(((p1, p2)) => seg-hits-box(p1, p2, box))
+      let crossed(box) = segs-hitting-box(fn-obstacle-segs, box, 1) > 0
       if crossed(origin-label-box-at(origin-dx, origin-dy, origin-anchor)) {
         let dx = calc.abs(origin-dx)
         let dy = calc.abs(origin-dy)
@@ -1121,16 +1282,7 @@
     let hidden-y = ()
     let origin-hidden = false
     if hide-crossed-tick-labels and fn-obstacle-segs.len() > 0 {
-      let crossing-count(b) = {
-        let hits = 0
-        for (p1, p2) in fn-obstacle-segs {
-          if seg-hits-box(p1, p2, b) {
-            hits += 1
-            if hits >= 8 { break }
-          }
-        }
-        hits
-      }
+      let crossing-count(b) = segs-hitting-box(fn-obstacle-segs, b, 8)
       let hide-set(ticks, has-label, on-tick-max, val-max, box-of) = {
         let infos = ()
         for v in ticks {
@@ -1482,7 +1634,7 @@
       // A label paints its background only when a curve crosses it AND it is
       // not sitting on an area fill (see area-boxes above).
       let label-crossed(b) = (
-        fn-obstacle-segs.any(((p1, p2)) => seg-hits-box(p1, p2, b))
+        segs-hitting-box(fn-obstacle-segs, b, 1) > 0
           and not label-over-area(b)
       )
       let tick-text(label, crossed: false) = {
@@ -1546,7 +1698,7 @@
             ty >= by1 and ty <= by2 and tx + tick-len >= bx1 and tx - tick-len <= bx2
           })
           (vline-behind or hline-behind or minor-behind or xtick-behind or ytick-behind
-            or fn-obstacle-segs.any(((p1, p2)) => seg-hits-box(p1, p2, box-at)))
+            or segs-hitting-box(fn-obstacle-segs, box-at, 1) > 0)
         }
         // The box is always there — only its fill is conditional — so dropping
         // the background never nudges the glyph by the inset.
@@ -1783,7 +1935,7 @@
           }
         }
         for run in merge-segment-runs(segs) {
-          line(..run, stroke: stroke-style)
+          polyline(run, stroke: stroke-style)
         }
 
         if label != none {
@@ -1819,7 +1971,7 @@
           }
         }
         if connect and canvas-points.len() > 1 {
-          line(..canvas-points, stroke: stroke-style)
+          polyline(canvas-points, stroke: stroke-style)
         }
         if label != none and canvas-points.len() > 0 {
           let label-pos = func-spec.at("label-pos", default: 0.8)
@@ -1863,7 +2015,7 @@
 
         let all-pts = top-pts + bot-pts.rev()
         if all-pts.len() > 2 {
-          line(..all-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
+          polyline(all-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
         }
 
       // ── Fill between two functions ───────────────────────────────────────
@@ -1906,7 +2058,7 @@
 
         let all-pts = fwd-pts + bwd-pts.rev()
         if all-pts.len() > 2 {
-          line(..all-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
+          polyline(all-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
         }
 
       // ── Text annotation at data coordinates ─────────────────────────────
@@ -2130,7 +2282,7 @@
           }
         }
         for run in merge-segment-runs(par-segs) {
-          line(..run, stroke: stroke-style)
+          polyline(run, stroke: stroke-style)
         }
 
       // ── Fill area enclosed by parametric closed curve ────────────────────
@@ -2154,16 +2306,15 @@
           }
         }
         if par-pts.len() > 2 {
-          line(..par-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
+          polyline(par-pts, close: true, fill: series-paint(func-spec, fill-color), stroke: none)
         }
       }
 
       if mark-type != "none" and points-to-draw.len() > 0 {
-        for (cx, cy, i) in points-to-draw {
-          if calc.rem(i, mark-interval) == 0 {
-            draw-marker((cx, cy), mark-type, mark-size, mark-fill, mark-stroke)
-          }
-        }
+        draw-markers(
+          points-to-draw.filter(((cx, cy, i)) => calc.rem(i, mark-interval) == 0).map(((cx, cy, i)) => (cx, cy)),
+          mark-type, mark-size, mark-fill, mark-stroke,
+        )
       }
     }
     }  // end area/axes/line passes
@@ -2261,14 +2412,7 @@
                       calc.max(p1.at(0), p2.at(0)) + tick-len, calc.max(p1.at(1), p2.at(1)) + tick-len)
             if boxes-overlap(tb, ab) { score += 4 }
           }
-          let curve-hits = 0
-          for (p1, p2) in obstacle-segs {
-            if seg-hits-box(p1, p2, tb) {
-              curve-hits += 1
-              if curve-hits >= 3 { break }
-            }
-          }
-          score += 3 * curve-hits
+          score += 3 * segs-hitting-box(obstacle-segs, tb, 3)
           for b2 in tick-boxes {
             if boxes-overlap(tb, b2) { score += 2; break }
           }
@@ -2511,7 +2655,7 @@
             let t = i * 360deg / 64
             (ic-x + zoom-w / 2 * calc.cos(t), ic-y + zoom-h / 2 * calc.sin(t))
           })
-          line(..sh-pts, close: true, fill: luma(185), stroke: none)
+          polyline(sh-pts, close: true, fill: luma(185), stroke: none)
         } else {
           rect((bx1 + sh, by1 - sh), (bx2 + sh, by2 - sh), fill: luma(185), stroke: none)
         }
@@ -2526,7 +2670,7 @@
             let t = i * 360deg / 64
             (ic-x + zoom-w / 2 * calc.cos(t), ic-y + zoom-h / 2 * calc.sin(t))
           })
-          line(..bg-pts, close: true, fill: box-fill-v, stroke: none)
+          polyline(bg-pts, close: true, fill: box-fill-v, stroke: none)
         } else {
           rect((bx1, by1), (bx2, by2), fill: box-fill-v, stroke: none)
         }
@@ -2606,7 +2750,7 @@
           bot-pts.push((px, calc.max(blo, calc.min(bhi, pb))))
         }
         if top-pts.len() > 1 {
-          line(..(top-pts + bot-pts.rev()), close: true, fill: paint, stroke: none)
+          polyline((top-pts + bot-pts.rev()), close: true, fill: paint, stroke: none)
         }
       }
 
@@ -2661,16 +2805,14 @@
             }
           }
           if conn-z and canvas-z.len() > 1 {
-            line(..canvas-z, stroke: fs-stk)
+            polyline(canvas-z, stroke: fs-stk)
           }
           let mk-z = fs.at("mark", default: "none")
           if mk-z != "none" {
-            for pt-z in canvas-z {
-              draw-marker(pt-z, mk-z,
-                fs.at("mark-size",   default: s.marker.size),
-                fs.at("mark-fill",   default: s.marker.fill),
-                fs.at("mark-stroke", default: s.marker.stroke))
-            }
+            draw-markers(canvas-z, mk-z,
+              fs.at("mark-size",   default: s.marker.size),
+              fs.at("mark-fill",   default: s.marker.fill),
+              fs.at("mark-stroke", default: s.marker.stroke))
           }
 
         // ── Fill below a curve (fill-area) ───────────────────────────────
@@ -2779,7 +2921,7 @@
             })
           }
           if pts.len() > 2 {
-            line(..pts, close: true,
+            polyline(pts, close: true,
               fill: series-paint(fs, fs.at("color", default: luma(220))), stroke: none)
           }
 
@@ -2845,7 +2987,7 @@
           let t = i * 360deg / n-c
           (lens-cx + lens-r * calc.cos(t), lens-cy + lens-r * calc.sin(t))
         })
-        line(..circ-pts, close: true, stroke: reg-stk, fill: reg-fill)
+        polyline(circ-pts, close: true, stroke: reg-stk, fill: reg-fill)
       } else {
         rect((crx1, cry1), (crx2, cry2), stroke: reg-stk, fill: reg-fill)
       }
@@ -2859,7 +3001,7 @@
           let t = i * 360deg / n-c
           (ic-x + zoom-w / 2 * calc.cos(t), ic-y + zoom-h / 2 * calc.sin(t))
         })
-        line(..circ-pts, close: true, fill: none, stroke: box-stk)
+        polyline(circ-pts, close: true, fill: none, stroke: box-stk)
       } else {
         rect((bx1, by1), (bx2, by2), fill: none, stroke: box-stk)
       }
@@ -3621,6 +3763,7 @@
 
   cetz.canvas(length: 1cm, {
     import cetz.draw: *
+    let line = _line
 
     let axis-cy = 0.0
     let disk-steps = 36
@@ -3723,9 +3866,9 @@
         if radius > 0.02 {
           let ex = cx(px, float(y))
           if show-back {
-            line(..ellipse-full(ex, radius), close: true, fill: disk-color, stroke: none)
+            polyline(ellipse-full(ex, radius), close: true, fill: disk-color, stroke: none)
           } else {
-            line(..ellipse-half(ex, radius, "upper"), close: true, fill: disk-color, stroke: none)
+            polyline(ellipse-half(ex, radius, "upper"), close: true, fill: disk-color, stroke: none)
           }
         }
       }
@@ -3743,17 +3886,17 @@
           // Skip degenerate holes: nothing to punch when no material is left.
           if has-hole and ir > 0.02 and ir < radius - 0.02 {
             if show-back {
-              line(..ellipse-full(ex, ir), close: true, fill: hole-color, stroke: disk-stroke)
+              polyline(ellipse-full(ex, ir), close: true, fill: hole-color, stroke: disk-stroke)
             } else {
-              line(..ellipse-half(ex, ir, "upper"), close: true, fill: hole-color, stroke: disk-stroke)
+              polyline(ellipse-half(ex, ir, "upper"), close: true, fill: hole-color, stroke: disk-stroke)
             }
           }
           if show-back {
-            line(..ellipse-half(ex, radius, "back"), stroke: dashed-stroke)
-            line(..ellipse-half(ex, radius, "front"), stroke: disk-stroke)
+            polyline(ellipse-half(ex, radius, "back"), stroke: dashed-stroke)
+            polyline(ellipse-half(ex, radius, "front"), stroke: disk-stroke)
           } else {
-            line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
-            line(..ellipse-half(ex, radius, "upper-front"), stroke: disk-stroke)
+            polyline(ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
+            polyline(ellipse-half(ex, radius, "upper-front"), stroke: disk-stroke)
           }
         }
       }
@@ -3764,19 +3907,19 @@
     // Filled solid body
     if top-pts.len() > 0 {
       if show-back {
-        line(..(top-pts + bot-pts.rev()), close: true, fill: disk-color, stroke: none)
+        polyline((top-pts + bot-pts.rev()), close: true, fill: disk-color, stroke: none)
       } else {
         let x-left  = top-pts.first().at(0)
         let x-right = top-pts.last().at(0)
-        line(..(top-pts + ((x-right, axis-cy), (x-left, axis-cy))), close: true,
+        polyline((top-pts + ((x-right, axis-cy), (x-left, axis-cy))), close: true,
              fill: disk-color, stroke: none)
       }
     }
 
     // Inner wall of a hollow solid: hidden behind the body, so dashed.
     if has-hole and in-top-pts.len() > 1 {
-      line(..in-top-pts, stroke: resolved-inner-stroke)
-      if show-back { line(..in-bot-pts, stroke: resolved-inner-stroke) }
+      polyline(in-top-pts, stroke: resolved-inner-stroke)
+      if show-back { polyline(in-bot-pts, stroke: resolved-inner-stroke) }
     }
 
     // Intermediate cross-sections: disks, or washers when the solid is hollow
@@ -3789,20 +3932,20 @@
         let radius = cr(xd, fyd)
         if radius > 0.02 {
           if show-back {
-            line(..ellipse-half(ex, radius, "back"), stroke: dashed-stroke)
-            line(..ellipse-half(ex, radius, "front"), stroke: disk-stroke)
+            polyline(ellipse-half(ex, radius, "back"), stroke: dashed-stroke)
+            polyline(ellipse-half(ex, radius, "front"), stroke: disk-stroke)
           } else {
-            line(..ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
-            line(..ellipse-half(ex, radius, "upper-front"), stroke: disk-stroke)
+            polyline(ellipse-half(ex, radius, "upper-back"), stroke: dashed-stroke)
+            polyline(ellipse-half(ex, radius, "upper-front"), stroke: disk-stroke)
           }
           let ir = inner-radius(xd)
           if has-hole and ir > 0.02 {
             if show-back {
-              line(..ellipse-half(ex, ir, "back"), stroke: dashed-stroke)
-              line(..ellipse-half(ex, ir, "front"), stroke: disk-stroke)
+              polyline(ellipse-half(ex, ir, "back"), stroke: dashed-stroke)
+              polyline(ellipse-half(ex, ir, "front"), stroke: disk-stroke)
             } else {
-              line(..ellipse-half(ex, ir, "upper-back"), stroke: dashed-stroke)
-              line(..ellipse-half(ex, ir, "upper-front"), stroke: disk-stroke)
+              polyline(ellipse-half(ex, ir, "upper-back"), stroke: dashed-stroke)
+              polyline(ellipse-half(ex, ir, "upper-front"), stroke: disk-stroke)
             }
           }
         }
@@ -3811,7 +3954,7 @@
 
     // Bottom profile (dashed)
     if show-back and bot-pts.len() > 1 {
-      line(..bot-pts, stroke: dashed-stroke)
+      polyline(bot-pts, stroke: dashed-stroke)
     }
 
     // Left cap at x=a
@@ -3820,7 +3963,7 @@
 
     // Top profile
     if top-pts.len() > 1 {
-      line(..top-pts, stroke: profile-stroke)
+      polyline(top-pts, stroke: profile-stroke)
     }
 
     // Closing cap at x=b, stroked last so its rim sits above the body it bounds.
