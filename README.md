@@ -1,7 +1,7 @@
 # simple-plot
 
 [![simple-plot on Typst Universe](https://img.shields.io/badge/Typst_Universe-v._1.1.1-239dad?labelColor=eee)](https://typst.app/universe/package/simple-plot)
-[![Full package manual as PDF](https://img.shields.io/badge/Manual-pdf-333333?labelColor=eee)](https://github.com/nathan-ed/typst-package-simple-plot/blob/50ee4f4c26049da195473d76695587be8acbd0ba/docs/manual.pdf)
+[![Full package manual as PDF](https://img.shields.io/badge/Manual-pdf-333333?labelColor=eee)](https://github.com/nathan-ed/typst-package-simple-plot/blob/1a21a3de3e3bebcdb2237d3060b36a518422de8d/docs/manual.pdf)
 [![Distributed under the MIT license](https://img.shields.io/badge/License-MIT-333333?labelColor=eee)](LICENSE)
 
 A simple, pgfplots-like function plotting library for Typst. Create beautiful mathematical plots with minimal code.
@@ -10,7 +10,7 @@ A simple, pgfplots-like function plotting library for Typst. Create beautiful ma
 
 ## Manual
 
-A full manual is available in [docs/manual.pdf](https://github.com/nathan-ed/typst-package-simple-plot/blob/50ee4f4c26049da195473d76695587be8acbd0ba/docs/manual.pdf).
+A full manual is available in [docs/manual.pdf](https://github.com/nathan-ed/typst-package-simple-plot/blob/1a21a3de3e3bebcdb2237d3060b36a518422de8d/docs/manual.pdf).
 
 ## Gallery
 
